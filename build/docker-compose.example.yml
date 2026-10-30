@@ -1,0 +1,13 @@
+services:
+  seedkit:
+    image: seedkit:latest
+    container_name: seedkit
+    restart: unless-stopped
+    ports:
+      - "18080:8080"
+    volumes:
+      - ./data:/data              # config.yaml, tasks.json, output/
+      - /path/to/media:/media:rw  # add as a root in settings: media -> /media
+    environment:
+      - TZ=Asia/Shanghai
+      # - SEEDKIT_PATHS_ROOTS=media=/media   # or configure in the UI
