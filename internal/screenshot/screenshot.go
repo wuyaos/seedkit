@@ -195,7 +195,7 @@ func (s *Service) Run(ctx context.Context, src, outDir string, opt Options, log 
 		return res, errors.New("no screenshot produced")
 	}
 	sort.Slice(res.Shots, func(a, b int) bool { return res.Shots[a].Index < res.Shots[b].Index })
-	log.Progress(1, "done")
+	log.Progress(1, "")
 	return res, nil
 }
 

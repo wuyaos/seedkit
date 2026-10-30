@@ -46,7 +46,7 @@ func (s *Server) handleMediaInfo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(err), err)
 		return
 	}
-	t := s.tasks.Submit("mediainfo", "MediaInfo "+path.Base(in.Path), false,
+	t := s.tasks.Submit("mediainfo", "MediaInfo · "+path.Base(in.Path), false,
 		func(ctx context.Context, rep task.Reporter) (any, error) {
 			src := abs
 			if media.Detect(abs) == media.KindBDMV {
@@ -96,7 +96,7 @@ func (s *Server) handleBDInfo(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(err), err)
 		return
 	}
-	t := s.tasks.Submit("bdinfo", "BDInfo "+path.Base(in.Path), true,
+	t := s.tasks.Submit("bdinfo", "BDInfo · "+path.Base(in.Path), true,
 		func(ctx context.Context, rep task.Reporter) (any, error) {
 			res, err := media.BDInfo(ctx, abs, media.BDInfoOptions{Playlist: in.Playlist, SummaryOnly: in.SummaryOnly},
 				func(p float64, stage string) { rep.Progress(p, stage) })
@@ -134,7 +134,7 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(err), err)
 		return
 	}
-	t := s.tasks.Submit("screenshot", "Screenshot "+path.Base(in.Path), true, s.screenshotJob(abs, in))
+	t := s.tasks.Submit("screenshot", "截图 · "+path.Base(in.Path), true, s.screenshotJob(abs, in))
 	writeJSON(w, 202, t)
 }
 
@@ -234,7 +234,7 @@ func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
 			abs = append(abs, p)
 		}
 	}
-	t := s.tasks.Submit("upload", fmt.Sprintf("Upload %d image(s) to %s", len(abs), up.Name()), false,
+	t := s.tasks.Submit("upload", fmt.Sprintf("上传 %d 张图片 → %s", len(abs), up.Name()), false,
 		func(ctx context.Context, rep task.Reporter) (any, error) {
 			n := 0
 			res := upload.UploadAll(ctx, up, abs, func(r upload.Result) {
@@ -269,7 +269,7 @@ func (s *Server) handleTorrent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(err), err)
 		return
 	}
-	t := s.tasks.Submit("torrent", "Torrent "+path.Base(in.Path), true, s.torrentJob(abs, in))
+	t := s.tasks.Submit("torrent", "制种 · "+path.Base(in.Path), true, s.torrentJob(abs, in))
 	writeJSON(w, 202, t)
 }
 
@@ -322,7 +322,7 @@ func (s *Server) handlePipeline(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(err), err)
 		return
 	}
-	t := s.tasks.Submit("pipeline", "Pipeline "+path.Base(in.Path), true,
+	t := s.tasks.Submit("pipeline", "发布 · "+path.Base(in.Path), true,
 		func(ctx context.Context, rep task.Reporter) (any, error) {
 			out := map[string]any{}
 			kind := media.Detect(abs)

@@ -126,11 +126,11 @@ func (s *Server) handleMoveCopy(move bool) http.HandlerFunc {
 			writeErr(w, 400, err)
 			return
 		}
-		verb := "copy"
+		verb := "复制"
 		if move {
-			verb = "move"
+			verb = "移动"
 		}
-		t := s.tasks.Submit("fileop", fmt.Sprintf("%s %d item(s) → %s", verb, len(in.Paths), in.Dest), false,
+		t := s.tasks.Submit("fileop", fmt.Sprintf("%s %d 项 → %s", verb, len(in.Paths), in.Dest), false,
 			func(ctx context.Context, rep task.Reporter) (any, error) {
 				for i, p := range in.Paths {
 					if ctx.Err() != nil {

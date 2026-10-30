@@ -115,7 +115,7 @@ func (m *Manager) run(ctx context.Context, t *Task, job Job) {
 	res, err := func() (res any, err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				err = fmt.Errorf("panic: %v", r)
+				err = fmt.Errorf("内部错误: %v", r)
 			}
 		}()
 		return job(ctx, rep)

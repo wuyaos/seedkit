@@ -49,7 +49,7 @@ func Create(ctx context.Context, src, dst string, opt Options, progress func(p f
 		Version:    opt.CreatedBy,
 		ProgressCallback: func(done, total int, rate float64) {
 			if progress != nil && total > 0 {
-				progress(float64(done)/float64(total), fmt.Sprintf("hashing %d/%d pieces", done, total))
+				progress(float64(done)/float64(total), fmt.Sprintf("校验分块 %d/%d", done, total))
 			}
 		},
 	}
@@ -97,7 +97,7 @@ func Create(ctx context.Context, src, dst string, opt Options, progress func(p f
 		return nil, err
 	}
 	if progress != nil {
-		progress(1, "done")
+		progress(1, "")
 	}
 	files := len(info.Files)
 	total := info.Length
