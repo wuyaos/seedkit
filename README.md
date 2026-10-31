@@ -113,7 +113,7 @@ seedkit 在功能组合和操作流程上参考以下项目；它是独立实现
 
 | 项目 | 参考内容 |
 | --- | --- |
-| [wuyaos/BDInfo](https://github.com/wuyaos/BDInfo) | 媒体信息、截图、上传、制种与 BBCode 的组合工作流，以及 bd.sh 的处理经验 |
+| [Kuanghom/BDInfo](https://github.com/Kuanghom/BDInfo) | 媒体信息、截图、上传、制种与 BBCode 的组合工作流，以及 bd.sh 的处理经验 |
 | [YEAHZERO/BDInfoWebUI](https://github.com/YEAHZERO/BDInfoWebUI) | BDInfo 的 Web 操作流程、任务进度与结果呈现 |
 | [mirrorb/minfo](https://github.com/mirrorb/minfo) | Go 媒体工具的能力组合与轻量部署思路 |
 
