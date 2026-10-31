@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -58,7 +59,9 @@ func (s *Server) handleMediaInfo(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				return nil, err
 			}
-			return map[string]string{"text": txt, "source": src}, nil
+			out := map[string]string{"text": txt, "source": src}
+			s.record("mediainfo", in.Path, rep.ID(), out)
+			return out, nil
 		})
 	writeJSON(w, 202, t)
 }
@@ -102,8 +105,10 @@ func (s *Server) handleBDInfo(w http.ResponseWriter, r *http.Request) {
 				func(p float64, stage string) { rep.Progress(p, stage) })
 			if res != nil {
 				dir := s.outputDir(safeBase(in.Path))
-				_ = os.MkdirAll(dir, 0o755)
 				_ = os.WriteFile(filepath.Join(dir, "bdinfo.txt"), []byte(res.Report), 0o644)
+			}
+			if err == nil {
+				s.record("bdinfo", in.Path, rep.ID(), res)
 			}
 			return res, err
 		})
@@ -178,6 +183,7 @@ func (s *Server) screenshotJob(abs string, in screenshotReq) task.Job {
 		if in.Upload {
 			up, err := s.uploader(in.Host)
 			if err != nil {
+				s.record("screenshot", in.Path, rep.ID(), out)
 				return out, err
 			}
 			paths := make([]string, len(res.Shots))
@@ -197,6 +203,7 @@ func (s *Server) screenshotJob(abs string, in screenshotReq) task.Job {
 			})
 			appendURLs(outDir, out.Uploads)
 		}
+		s.record("screenshot", in.Path, rep.ID(), out)
 		return out, nil
 	}
 }
@@ -212,6 +219,95 @@ func appendURLs(dir string, ups []upload.Result) {
 			fmt.Fprintf(f, "%s\t%s\n", filepath.Base(u.File), u.URL)
 		}
 	}
+}
+
+// record stores a task result in the results library; failures are logged only.
+func (s *Server) record(kind, vpath, taskID string, data any) {
+	if _, err := s.results.Add(kind, strings.Trim(vpath, "/"), path.Base(vpath), taskID, data); err != nil {
+		s.log.Warn("results save failed", "err", err)
+	}
+}
+
+// handleReupload uploads the not-yet-uploaded (or all) shots of a screenshot
+// record and patches the record's URLs in place.
+func (s *Server) handleReupload(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		ID   string
+		Host string
+		All  bool
+	}
+	if err := readJSON(r, &in); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	rec, ok := s.results.Get(in.ID)
+	if !ok || rec.Kind != "screenshot" {
+		writeErr(w, 404, errors.New("screenshot record not found"))
+		return
+	}
+	up, err := s.uploader(in.Host)
+	if err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	var data shotRecord
+	if err := json.Unmarshal(rec.Data, &data); err != nil {
+		writeErr(w, 500, err)
+		return
+	}
+	var todo []string
+	for _, sh := range data.Shots {
+		if in.All || sh.URL == "" {
+			todo = append(todo, sh.Path)
+		}
+	}
+	if len(todo) == 0 {
+		writeErr(w, 400, errors.New("nothing to upload"))
+		return
+	}
+	t := s.tasks.Submit("upload", fmt.Sprintf("补传 %d 张 → %s · %s", len(todo), up.Name(), rec.Title), false,
+		func(ctx context.Context, rep task.Reporter) (any, error) {
+			n := 0
+			res := upload.UploadAll(ctx, up, todo, func(r upload.Result) {
+				n++
+				rep.Progress(float64(n)/float64(len(todo)), filepath.Base(r.File))
+				if r.Err != "" {
+					rep.Logf("%s: %s", filepath.Base(r.File), r.Err)
+				}
+			})
+			byPath := map[string]string{}
+			for _, u := range res {
+				if u.URL != "" {
+					byPath[u.File] = u.URL
+				}
+			}
+			_ = s.results.Update(rec.ID, func(raw json.RawMessage) (any, error) {
+				var d map[string]any
+				if err := json.Unmarshal(raw, &d); err != nil {
+					return nil, err
+				}
+				shots, _ := d["shots"].([]any)
+				for _, x := range shots {
+					m, _ := x.(map[string]any)
+					p, _ := m["path"].(string)
+					if u, ok := byPath[p]; ok {
+						m["url"] = u
+					}
+				}
+				d["shots"] = shots
+				return d, nil
+			})
+			appendURLs(filepath.Dir(todo[0]), res)
+			return res, nil
+		})
+	writeJSON(w, 202, t)
+}
+
+type shotRecord struct {
+	Shots []struct {
+		Path string `json:"path"`
+		URL  string `json:"url"`
+	} `json:"shots"`
 }
 
 func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -299,69 +395,10 @@ func (s *Server) torrentJob(abs string, in torrentReq) task.Job {
 		if err != nil {
 			return nil, err
 		}
-		return map[string]any{"torrent": res, "web": s.outputWeb(res.Path)}, nil
+		out := map[string]any{"torrent": res, "web": s.outputWeb(res.Path)}
+		s.record("torrent", in.Path, rep.ID(), out)
+		return out, nil
 	}
-}
-
-// handlePipeline runs mediainfo/bdinfo + screenshot(+upload) + torrent for one
-// path as a single heavy task and returns everything needed to fill a template.
-func (s *Server) handlePipeline(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Path       string
-		Screenshot *screenshotReq
-		Torrent    *torrentReq
-		Info       bool
-		Playlist   string
-	}
-	if err := readJSON(r, &in); err != nil {
-		writeErr(w, 400, err)
-		return
-	}
-	abs, err := s.files.Resolve(in.Path)
-	if err != nil {
-		writeErr(w, statusFor(err), err)
-		return
-	}
-	t := s.tasks.Submit("pipeline", "发布 · "+path.Base(in.Path), true,
-		func(ctx context.Context, rep task.Reporter) (any, error) {
-			out := map[string]any{}
-			kind := media.Detect(abs)
-			if in.Info {
-				rep.Logf("info: %s", kind)
-				if kind == media.KindFile {
-					txt, err := media.MediaInfo(ctx, abs)
-					if err != nil {
-						return out, err
-					}
-					out["mediainfo"] = txt
-				} else {
-					res, err := media.BDInfo(ctx, abs, media.BDInfoOptions{Playlist: in.Playlist},
-						func(p float64, st string) { rep.Progress(p*0.3, "bdinfo "+st) })
-					if err != nil {
-						return out, err
-					}
-					out["bdinfo"] = res
-				}
-			}
-			if in.Screenshot != nil {
-				in.Screenshot.Path = in.Path
-				res, err := s.screenshotJob(abs, *in.Screenshot)(ctx, rep)
-				out["screenshot"] = res
-				if err != nil {
-					return out, err
-				}
-			}
-			if in.Torrent != nil {
-				in.Torrent.Path = in.Path
-				res, err := s.torrentJob(abs, *in.Torrent)(ctx, rep)
-				out["torrent"] = res
-				if err != nil {
-					return out, err
-				}
-			}
-			return out, nil
-		})
-	writeJSON(w, 202, t)
 }
 
 func safeBase(vpath string) string {

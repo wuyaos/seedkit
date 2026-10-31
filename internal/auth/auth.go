@@ -16,13 +16,13 @@ import (
 const cookieName = "seedkit_session"
 
 type Manager struct {
-	mu        sync.Mutex
-	username  string
-	hash      string
-	ttl       time.Duration
-	sessions  map[string]time.Time
-	failures  map[string]*failure
-	secureCk  bool
+	mu       sync.Mutex
+	username string
+	hash     string
+	ttl      time.Duration
+	sessions map[string]time.Time
+	failures map[string]*failure
+	secureCk bool
 }
 
 type failure struct {
@@ -122,7 +122,7 @@ func (m *Manager) SetCookie(w http.ResponseWriter, r *http.Request, token string
 	http.SetCookie(w, &http.Cookie{
 		Name: cookieName, Value: token, Path: "/", HttpOnly: true,
 		SameSite: http.SameSiteLaxMode, Secure: r.TLS != nil,
-		Expires:  time.Now().Add(m.ttl),
+		Expires: time.Now().Add(m.ttl),
 	})
 }
 

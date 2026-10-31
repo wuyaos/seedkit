@@ -5,14 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"archive/zip"
 	"github.com/wuyaos/seedkit/internal/auth"
 	"github.com/wuyaos/seedkit/internal/bbcode"
 	"github.com/wuyaos/seedkit/internal/config"
 	"github.com/wuyaos/seedkit/internal/screenshot"
 	"github.com/wuyaos/seedkit/internal/tools"
+	"io"
+	"path"
+	"path/filepath"
 )
 
 // ---------- auth ----------
@@ -132,6 +137,119 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 			fl.Flush()
 		}
 	}
+}
+
+// ---------- results library ----------
+
+func (s *Server) handleResults(w http.ResponseWriter, r *http.Request) {
+	p := strings.Trim(r.URL.Query().Get("path"), "/")
+	if p == "" {
+		writeErr(w, 400, errors.New("path required"))
+		return
+	}
+	writeJSON(w, 200, s.results.ForPath(p))
+}
+
+func (s *Server) handleResultsRecent(w http.ResponseWriter, r *http.Request) {
+	n, _ := strconv.Atoi(r.URL.Query().Get("n"))
+	if n <= 0 {
+		n = 50
+	}
+	writeJSON(w, 200, s.results.Recent(n))
+}
+
+func (s *Server) handleResult(w http.ResponseWriter, r *http.Request) {
+	rec, ok := s.results.Get(r.PathValue("id"))
+	if !ok {
+		writeErr(w, 404, errors.New("result not found"))
+		return
+	}
+	writeJSON(w, 200, rec)
+}
+
+// handleResultDelete removes a record; with ?files=1 the artefact files it
+// points at (shots, .torrent) are removed from the output dir too.
+func (s *Server) handleResultDelete(w http.ResponseWriter, r *http.Request) {
+	rec, ok := s.results.Delete(r.PathValue("id"))
+	if !ok {
+		writeErr(w, 404, errors.New("result not found"))
+		return
+	}
+	if r.URL.Query().Get("files") == "1" {
+		for _, abs := range artefactPaths(rec.Data) {
+			if rel, ok := s.output.Rel(abs); ok {
+				_ = s.output.Root().Remove(rel)
+			}
+		}
+	}
+	writeJSON(w, 200, map[string]bool{"ok": true})
+}
+
+// handleResultZip streams every artefact file of a record as one zip
+// (store method: PNG/torrent are already compressed). Only files inside the
+// output sandbox are included.
+func (s *Server) handleResultZip(w http.ResponseWriter, r *http.Request) {
+	rec, ok := s.results.Get(r.PathValue("id"))
+	if !ok {
+		writeErr(w, 404, errors.New("result not found"))
+		return
+	}
+	var rels []string
+	for _, abs := range artefactPaths(rec.Data) {
+		if rel, ok := s.output.Rel(abs); ok {
+			if _, err := s.output.Root().Stat(rel); err == nil {
+				rels = append(rels, rel)
+			}
+		}
+	}
+	if len(rels) == 0 {
+		writeErr(w, 404, errors.New("no artefact files on disk"))
+		return
+	}
+	base := path.Base(rec.Path)
+	if base == "" || base == "." || base == "/" {
+		base = rec.Kind
+	}
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", base+"."+rec.Kind+".zip"))
+	zw := zip.NewWriter(w)
+	defer zw.Close()
+	for _, rel := range rels {
+		f, err := s.output.Root().Open(rel)
+		if err != nil {
+			continue
+		}
+		info, err := f.Stat()
+		if err != nil {
+			f.Close()
+			continue
+		}
+		h, _ := zip.FileInfoHeader(info)
+		h.Name = path.Base(filepath.ToSlash(rel))
+		h.Method = zip.Store
+		fw, err := zw.CreateHeader(h)
+		if err == nil {
+			_, _ = io.Copy(fw, f)
+		}
+		f.Close()
+	}
+}
+
+// artefactPaths pulls absolute file paths out of a screenshot/torrent record.
+func artefactPaths(raw json.RawMessage) []string {
+	var d struct {
+		Shots   []struct{ Path string } `json:"shots"`
+		Torrent *struct{ Path string }  `json:"torrent"`
+	}
+	_ = json.Unmarshal(raw, &d)
+	var out []string
+	for _, sh := range d.Shots {
+		out = append(out, sh.Path)
+	}
+	if d.Torrent != nil {
+		out = append(out, d.Torrent.Path)
+	}
+	return out
 }
 
 // ---------- settings / templates ----------

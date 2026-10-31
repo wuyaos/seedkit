@@ -11,27 +11,34 @@ Status: implemented
 
 ## Decision
 
-主程序是 **CGO_ENABLED=0 的 Go 单二进制**，前端 Vue 构建产物 `go:embed` 进去。许可证 **GPL-2.0**（被依赖库传染，见下）。
+主程序是 **CGO_ENABLED=0 的 Go 单二进制**，前端 Alpine.js + 原生 CSS 的静态资源由 `web/embed.go` 直接嵌入，无 npm 构建和 Node 常驻进程。Go 依赖带来 GPL 许可约束；正式发行前仍需核对依赖及视觉资源的再分发要求。
 
 依赖面只剩 **ffmpeg + ffprobe**，其余全部进程内完成：
 
 | 能力 | 实现 | 许可 |
 |---|---|---|
-| BDInfo | `github.com/autobrr/go-bdinfo/pkg/bdinfo` 作为库 import，`bdinfo.Run(ctx, Options{OnProgress})` 拿进度与报告 | GPL-2.0 |
-| MediaInfo | `github.com/autobrr/go-mediainfo` 库，`AnalyzeFile` + `Render(OutputText)` | GPL-2.0 |
+| BDInfo | `github.com/autobrr/go-bdinfo/pkg/bdinfo` 作为库 import，`bdinfo.Run(ctx, Options{OnProgress})` 拿进度与报告 | GPL-2.0-or-later；固定到 c4a4d2f7dd39 明确许可提交 |
+| MediaInfo | `github.com/autobrr/go-mediainfo` 库，`AnalyzeFile` + `Render(OutputText)` | GPL-2.0-or-later |
 | PNG 压缩（替代 pngquant） | `github.com/ericpauley/go-quantize` Median Cut 生成 256 色调色板 + 标准库 `draw.FloydSteinberg` 抖动 + `image/png` Paletted 编码 | MIT |
 | 图片唯一化（替代 ImageMagick 写注释） | Go 写 PNG `tEXt` 块 | 标准库 |
-| 制种 | `github.com/autobrr/mkbrr/torrent` 作为库（`CreateTorrent` + 自写文件），封装加 ctx 取消与进度转发 | GPL-2.0 |
+| 制种 | `github.com/autobrr/mkbrr/torrent` 作为库（`CreateTorrent` + 自写文件），封装加 ctx 取消与进度转发 | GPL-2.0-or-later |
 | 截图 | exec `ffmpeg`/`ffprobe` | 外部 |
 
-ffmpeg 解析顺序：配置文件显式路径 → `-tags bundleffmpeg` 构建时内嵌并释放到数据目录的静态二进制 → `PATH`。默认构建不内嵌，二进制约 15 MB；带 tag 的"全家桶"构建约 95 MB，给无 root 的用户。
+ffmpeg 解析顺序：配置文件显式路径 → `-tags bundleffmpeg` 构建时内嵌并释放到数据目录的静态二进制 → `PATH`。默认构建不内嵌工具，不应将普通 release 称作完整截图免依赖包；bundleffmpeg 需要预先提供匹配目标平台的工具，体积由所用工具版本决定。
 
 启动时探测 ffmpeg 版本并在设置页展示；缺失时截图功能禁用但其余功能可用。`seedkit doctor` 子命令输出同样的探测结果。
+PNG 量化压缩改为可选且默认关闭：它是截图后的额外 CPU 阶段，4K 图片使用 256 色量化与 Floyd-Steinberg 抖动时耗时明显。相比默认开启以节省上传体积，优先缩短盒子任务时间；截图选项和设置页提示耗时与体积取舍。关闭压缩仍保留原分辨率 PNG；配置中用户明确保存的 `compress: true` 不在加载时强行覆盖。
+
+## 管理员密码恢复
+
+`seedkit passwd` 通过本机交互终端隐藏输入两次密码，按现有 bcrypt 规则替换 `auth.password_hash`，不接受密码参数。直接修改 YAML 节点而不调用带环境覆盖的 `config.Load`，防止把容器环境写回配置或丢失未知键。需要已有管理员；`SEEDKIT_AUTH_PASSWORD_HASH` 存在时拒绝操作，以免重启覆盖新密码。
+
+运行进程持有内存中的凭据与会话，因此重置后必须重启；不增加 HTTP 恢复入口或文件监视器。代价是短暂重启，收益是恢复路径不依赖已遗忘的密码，也不扩大公网鉴权面。重置期间不要并发保存网页设置。
 
 ## 包拓扑
 
 ```
-cmd/seedkit          main：子命令 serve / doctor / version
+cmd/seedkit          main：子命令 serve / doctor / passwd / version
 internal/config      YAML 配置 + 环境变量覆盖；数据目录布局
 internal/server      HTTP 路由、embed 前端、SSE 事件流
 internal/auth        单用户密码登录，Cookie 会话，登录失败限速
@@ -43,12 +50,12 @@ internal/upload      图床客户端：picgo.net（Chevereto API，含 tEXt 去�
 internal/torrent     mkbrr 薄封装（~100 行）
 internal/bbcode      text/template 模板渲染，用户可自定义多套
 internal/tools       外部工具探测与路径解析（ffmpeg/ffprobe）
-web/                 Vue 3 + Vite + Naive UI，构建产物 web/dist 被 server 包 embed
+web/                 Alpine.js + 原生 CSS，本地静态资产 web/static 由 web/embed.go 嵌入
 ```
 
 任务是唯一跨模块通道：`fsroot`/`media`/`screenshot`/`torrent` 只暴露同步函数，`task` 包负责排队、取消（ctx）、进度事件；`server` 只把事件转成 SSE。`media` 包 **must** 接受 `context.Context`，因为 go-bdinfo 扫描一张原盘要分钟级。
 
-组织规则：包按领域切不按层切；领域包之间不互相 import，只有 `server` 依赖它们（`screenshot` 依赖 `tools` 是唯一例外）。`server` 拆为 `server.go`（路由/helpers/SPA）+ `handlers_fs.go` + `handlers_media.go` + `handlers_misc.go`，拆文件不拆包。单文件包（auth、bbcode、config、fsroot…）是 Go 常态，不为凑文件数拆分。
+包按领域组织，由 `server` 编排任务、领域服务和结果存储。`server` 拆为 `server.go`（路由/helpers/SPA）+ `handlers_fs.go` + `handlers_media.go` + `handlers_misc.go`，拆文件不拆包。单文件包（auth、bbcode、config、fsroot…）是 Go 常态，不为凑文件数拆分。
 
 ## 路径安全：os.Root 而非前缀匹配
 
@@ -71,6 +78,6 @@ web/                 Vue 3 + Vite + Naive UI，构建产物 web/dist 被 server 
 
 ## Consequences
 
-- 收益：裸机部署是 `curl 下载 + chmod + ./seedkit serve`；Docker 镜像只需 `apt install ffmpeg`；常驻内存目标 < 40 MB。
-- 代价：项目必须 GPL-2.0；BDInfo 扫描峰值内存比 Rust 版高 40 MB；PNG 压缩率略逊 pngquant。
-- 约束：**never** 引入 cgo 依赖；**never** 在运行时从网络下载二进制；新增外部工具必须走 `internal/tools` 探测且缺失时功能降级而非启动失败。
+- 收益：主程序可直接运行；默认裸机截图仍需提供 ffmpeg/ffprobe。Docker 基于 Alpine，安装 ffmpeg、CA、时区及中文字幕字体；空闲占用低是目标，不是未经实测的保证。
+- 代价：需要遵守依赖和随包资源的许可；BDInfo 扫描与 PNG 量化有 CPU/峰值内存成本，不能把空闲占用当作重任务峰值。
+- 约束：**never** 引入 cgo 依赖；**never** 在运行时从网络下载二进制；新增外部工具走 `internal/tools` 探测且缺失时功能降级而非启动失败。

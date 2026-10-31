@@ -510,10 +510,10 @@ func OpenSingle(dir string) (*Single, error) {
 	return &Single{abs: abs, h: h}, nil
 }
 
-func (o *Single) Abs() string      { return o.abs }
-func (o *Single) FS() fs.FS        { return o.h.FS() }
-func (o *Single) Close() error     { return o.h.Close() }
-func (o *Single) Root() *os.Root   { return o.h }
+func (o *Single) Abs() string    { return o.abs }
+func (o *Single) FS() fs.FS      { return o.h.FS() }
+func (o *Single) Close() error   { return o.h.Close() }
+func (o *Single) Root() *os.Root { return o.h }
 
 // Path verifies rel through the Root and returns its absolute path.
 func (o *Single) Path(rel string) (string, error) {

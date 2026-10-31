@@ -52,12 +52,12 @@ func MediaInfoJSON(ctx context.Context, abs string) (string, error) {
 }
 
 type BDInfoResult struct {
-	Report       string              `json:"report"`
-	QuickSummary string              `json:"quickSummary"`
-	Forums       string              `json:"forums"`
-	Disc         bdinfo.DiscInfo     `json:"disc"`
+	Report       string                `json:"report"`
+	QuickSummary string                `json:"quickSummary"`
+	Forums       string                `json:"forums"`
+	Disc         bdinfo.DiscInfo       `json:"disc"`
 	Playlists    []bdinfo.PlaylistInfo `json:"playlists"`
-	Errors       map[string]string   `json:"errors,omitempty"`
+	Errors       map[string]string     `json:"errors,omitempty"`
 }
 
 type BDInfoOptions struct {

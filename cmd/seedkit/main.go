@@ -32,6 +32,15 @@ func main() {
 			log.Error("fatal", "err", err)
 			os.Exit(1)
 		}
+	case "passwd":
+		if len(os.Args) != 2 {
+			fmt.Fprintln(os.Stderr, "usage: seedkit passwd (interactive; do not pass passwords as arguments)")
+			os.Exit(2)
+		}
+		if err := passwd(dataDir, os.Stdin, os.Stderr); err != nil {
+			fmt.Fprintln(os.Stderr, "passwd:", err)
+			os.Exit(1)
+		}
 	case "doctor":
 		cfg, err := config.Load(dataDir)
 		if err != nil {
@@ -48,7 +57,7 @@ func main() {
 	case "version", "-v", "--version":
 		fmt.Println("seedkit", version)
 	default:
-		fmt.Fprintf(os.Stderr, "usage: seedkit [serve|doctor|version]\n  SEEDKIT_DATA=<dir> (default ./data or /data)\n")
+		fmt.Fprintf(os.Stderr, "usage: seedkit [serve|doctor|passwd|version]\n  SEEDKIT_DATA=<dir> (default ./data or /data)\n")
 		os.Exit(2)
 	}
 }

@@ -17,8 +17,8 @@ import (
 )
 
 type Service struct {
-	ffmpeg   string
-	ffprobe  string
+	ffmpeg    string
+	ffprobe   string
 	hasZscale bool
 }
 
@@ -43,19 +43,19 @@ type Options struct {
 }
 
 type Shot struct {
-	Index   int     `json:"index"`
-	Seconds float64 `json:"seconds"`
-	Path    string  `json:"path"`
-	Bytes   int64   `json:"bytes"`
-	RawBytes int64  `json:"rawBytes"`
+	Index    int     `json:"index"`
+	Seconds  float64 `json:"seconds"`
+	Path     string  `json:"path"`
+	Bytes    int64   `json:"bytes"`
+	RawBytes int64   `json:"rawBytes"`
 }
 
 type Result struct {
-	Source   string `json:"source"`
-	Duration float64 `json:"duration"`
-	HDR      bool   `json:"hdr"`
-	Subtitle string `json:"subtitle"`
-	Shots    []Shot `json:"shots"`
+	Source   string   `json:"source"`
+	Duration float64  `json:"duration"`
+	HDR      bool     `json:"hdr"`
+	Subtitle string   `json:"subtitle"`
+	Shots    []Shot   `json:"shots"`
 	Warnings []string `json:"warnings,omitempty"`
 }
 

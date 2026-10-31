@@ -9,17 +9,17 @@ import (
 )
 
 type Stream struct {
-	Index         int               `json:"index"`
-	CodecType     string            `json:"codec_type"`
-	CodecName     string            `json:"codec_name"`
-	Width         int               `json:"width"`
-	Height        int               `json:"height"`
-	PixFmt        string            `json:"pix_fmt"`
-	ColorTransfer string            `json:"color_transfer"`
-	ColorPrimaries string           `json:"color_primaries"`
-	ColorSpace    string            `json:"color_space"`
-	Tags          map[string]string `json:"tags"`
-	Disposition   map[string]int    `json:"disposition"`
+	Index          int               `json:"index"`
+	CodecType      string            `json:"codec_type"`
+	CodecName      string            `json:"codec_name"`
+	Width          int               `json:"width"`
+	Height         int               `json:"height"`
+	PixFmt         string            `json:"pix_fmt"`
+	ColorTransfer  string            `json:"color_transfer"`
+	ColorPrimaries string            `json:"color_primaries"`
+	ColorSpace     string            `json:"color_space"`
+	Tags           map[string]string `json:"tags"`
+	Disposition    map[string]int    `json:"disposition"`
 }
 
 type Probe struct {

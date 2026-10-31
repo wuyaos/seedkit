@@ -25,20 +25,20 @@ const (
 )
 
 type Task struct {
-	ID        string          `json:"id"`
-	Kind      string          `json:"kind"`   // mediainfo|bdinfo|screenshot|torrent|fileop
-	Title     string          `json:"title"`
-	Status    Status          `json:"status"`
-	Progress  float64         `json:"progress"` // 0..1
-	Message   string          `json:"message"`
-	Error     string          `json:"error,omitempty"`
-	Heavy     bool            `json:"heavy"`
-	Created   time.Time       `json:"created"`
-	Started   *time.Time      `json:"started,omitempty"`
-	Finished  *time.Time      `json:"finished,omitempty"`
-	Result    json.RawMessage `json:"result,omitempty"`
-	Log       []string        `json:"log,omitempty"`
-	cancel    context.CancelFunc
+	ID       string          `json:"id"`
+	Kind     string          `json:"kind"` // mediainfo|bdinfo|screenshot|torrent|fileop
+	Title    string          `json:"title"`
+	Status   Status          `json:"status"`
+	Progress float64         `json:"progress"` // 0..1
+	Message  string          `json:"message"`
+	Error    string          `json:"error,omitempty"`
+	Heavy    bool            `json:"heavy"`
+	Created  time.Time       `json:"created"`
+	Started  *time.Time      `json:"started,omitempty"`
+	Finished *time.Time      `json:"finished,omitempty"`
+	Result   json.RawMessage `json:"result,omitempty"`
+	Log      []string        `json:"log,omitempty"`
+	cancel   context.CancelFunc
 }
 
 // Event is what SSE subscribers receive.
@@ -49,6 +49,7 @@ type Event struct {
 
 // Reporter is handed to job functions to publish progress.
 type Reporter interface {
+	ID() string
 	Progress(p float64, msg string)
 	Logf(format string, a ...any)
 }
@@ -57,6 +58,7 @@ type Job func(ctx context.Context, rep Reporter) (result any, err error)
 
 type Manager struct {
 	mu       sync.Mutex
+	saveMu   sync.Mutex
 	tasks    map[string]*Task
 	order    []string
 	heavySem chan struct{}
@@ -76,6 +78,7 @@ func New(heavyConcurrency, historyKeep int, persistDir string) *Manager {
 	if persistDir != "" {
 		m.persist = filepath.Join(persistDir, "tasks.json")
 		m.load()
+		m.trimLocked()
 	}
 	return m
 }
@@ -92,11 +95,13 @@ func (m *Manager) Submit(kind, title string, heavy bool, job Job) *Task {
 	m.tasks[t.ID] = t
 	m.order = append(m.order, t.ID)
 	m.trimLocked()
+	queued := *t
+	queued.cancel = nil
 	m.mu.Unlock()
 	m.emit(t)
 
 	go m.run(ctx, t, job)
-	return t
+	return &queued
 }
 
 func (m *Manager) run(ctx context.Context, t *Task, job Job) {
@@ -109,9 +114,14 @@ func (m *Manager) run(ctx context.Context, t *Task, job Job) {
 			return
 		}
 	}
+	if err := ctx.Err(); err != nil {
+		m.finish(t, nil, err)
+		return
+	}
 	now := time.Now()
 	m.update(t, func() { t.Status = Running; t.Started = &now })
 	rep := &reporter{m: m, t: t}
+	rep.Logf("开始 · %s", t.Title)
 	res, err := func() (res any, err error) {
 		defer func() {
 			if r := recover(); r != nil {
@@ -125,6 +135,19 @@ func (m *Manager) run(ctx context.Context, t *Task, job Job) {
 
 func (m *Manager) finish(t *Task, res any, err error) {
 	now := time.Now()
+	rep := &reporter{m: m, t: t}
+	switch {
+	case err == nil:
+		if t.Started != nil {
+			rep.Logf("完成 · 用时 %s", now.Sub(*t.Started).Round(time.Millisecond))
+		} else {
+			rep.Logf("完成")
+		}
+	case errors.Is(err, context.Canceled):
+		rep.Logf("已取消")
+	default:
+		rep.Logf("失败 · %v", err)
+	}
 	m.update(t, func() {
 		t.Finished = &now
 		switch {
@@ -141,6 +164,9 @@ func (m *Manager) finish(t *Task, res any, err error) {
 			t.Status, t.Error = Failed, err.Error()
 		}
 	})
+	m.mu.Lock()
+	m.trimLocked()
+	m.mu.Unlock()
 	m.save()
 }
 
@@ -233,23 +259,25 @@ func (m *Manager) trimLocked() {
 			finished++
 		}
 	}
-	for finished > m.keep && len(m.order) > 0 {
-		id := m.order[0]
+	kept := m.order[:0]
+	for _, id := range m.order {
 		s := m.tasks[id].Status
-		if s == Done || s == Failed || s == Cancelled {
+		if finished > m.keep && (s == Done || s == Failed || s == Cancelled) {
 			delete(m.tasks, id)
-			m.order = m.order[1:]
 			finished--
-			continue
+		} else {
+			kept = append(kept, id)
 		}
-		break
 	}
+	m.order = kept
 }
 
 type reporter struct {
 	m *Manager
 	t *Task
 }
+
+func (r *reporter) ID() string { return r.t.ID }
 
 func (r *reporter) Progress(p float64, msg string) {
 	r.m.update(r.t, func() {
@@ -277,6 +305,8 @@ func (m *Manager) save() {
 	if m.persist == "" {
 		return
 	}
+	m.saveMu.Lock()
+	defer m.saveMu.Unlock()
 	m.mu.Lock()
 	list := make([]*Task, 0, len(m.order))
 	for _, id := range m.order {

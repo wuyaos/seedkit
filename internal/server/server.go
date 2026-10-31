@@ -3,8 +3,10 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -18,6 +20,7 @@ import (
 	"github.com/wuyaos/seedkit/internal/bbcode"
 	"github.com/wuyaos/seedkit/internal/config"
 	"github.com/wuyaos/seedkit/internal/fsroot"
+	"github.com/wuyaos/seedkit/internal/results"
 	"github.com/wuyaos/seedkit/internal/screenshot"
 	"github.com/wuyaos/seedkit/internal/task"
 	"github.com/wuyaos/seedkit/internal/tools"
@@ -35,6 +38,7 @@ type Server struct {
 	tools   tools.Set
 	shots   *screenshot.Service
 	tmpl    *bbcode.Store
+	results *results.Store
 	log     *slog.Logger
 	mux     *http.ServeMux
 }
@@ -48,6 +52,7 @@ func New(cfg *config.Config, dataDir, version string, log *slog.Logger) *Server 
 	s.tools = tools.Resolve(ctx, dataDir, cfg.Tools.FFmpeg, cfg.Tools.FFprobe)
 	s.shots = screenshot.New(ctx, s.tools.FFmpeg.Path, s.tools.FFprobe.Path)
 	s.tmpl = bbcode.NewStore(filepath.Join(dataDir, "templates"))
+	s.results = results.Open(dataDir, 10)
 	out, err := fsroot.OpenSingle(cfg.Paths.Output)
 	if err != nil {
 		log.Error("output dir unusable", "path", cfg.Paths.Output, "err", err)
@@ -103,7 +108,12 @@ func (s *Server) routes() {
 	p.HandleFunc("POST /api/screenshot", s.handleScreenshot)
 	p.HandleFunc("POST /api/upload", s.handleUpload)
 	p.HandleFunc("POST /api/torrent", s.handleTorrent)
-	p.HandleFunc("POST /api/pipeline", s.handlePipeline)
+	p.HandleFunc("POST /api/screenshot/reupload", s.handleReupload)
+	p.HandleFunc("GET /api/results", s.handleResults)
+	p.HandleFunc("GET /api/results/recent", s.handleResultsRecent)
+	p.HandleFunc("GET /api/results/{id}", s.handleResult)
+	p.HandleFunc("GET /api/results/{id}/zip", s.handleResultZip)
+	p.HandleFunc("DELETE /api/results/{id}", s.handleResultDelete)
 
 	p.HandleFunc("GET /api/output/", s.handleOutput)
 	p.HandleFunc("GET /api/templates", s.handleTemplates)
@@ -116,9 +126,12 @@ func (s *Server) routes() {
 	m.Handle("/api/", s.auth.Middleware(p))
 
 	// SPA
-	dist, err := fs.Sub(web.Dist, "dist")
+	dist, err := fs.Sub(web.Static, "static")
 	if err == nil {
 		fileServer := http.FileServer(http.FS(dist))
+		icons, _ := fs.ReadFile(dist, "vendor/lucide.svg")
+		iconHash := sha256.Sum256(icons)
+		iconVersion := fmt.Sprintf("%x", iconHash[:6])
 		m.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			p := strings.TrimPrefix(path.Clean(r.URL.Path), "/")
 			if p == "" {
@@ -126,6 +139,13 @@ func (s *Server) routes() {
 			}
 			if _, err := fs.Stat(dist, p); err != nil {
 				r.URL.Path = "/"
+				p = "index.html"
+			}
+			versionedIcon := p == "vendor/lucide.svg" && r.URL.Query().Get("v") == iconVersion
+			if versionedIcon || strings.HasPrefix(p, "assets/") || (strings.HasPrefix(p, "vendor/") && p != "vendor/lucide.svg") {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else {
+				w.Header().Set("Cache-Control", "no-cache")
 			}
 			fileServer.ServeHTTP(w, r)
 		})

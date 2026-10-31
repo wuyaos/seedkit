@@ -1,7 +1,7 @@
-// Package web embeds the built Vue frontend (web/dist).
+// Package web embeds the static frontend (Alpine.js, no build step).
 package web
 
 import "embed"
 
-//go:embed all:dist
-var Dist embed.FS
+//go:embed all:static
+var Static embed.FS

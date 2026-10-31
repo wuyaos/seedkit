@@ -177,6 +177,10 @@ func (s *Server) outputWeb(abs string) string {
 
 // handleOutput serves files from the output sandbox. os.Root.FS rejects any
 // path that would leave the directory, so no manual prefix check is needed.
+// ?dl=1 forces a download with the file's own name.
 func (s *Server) handleOutput(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("dl") == "1" {
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", path.Base(r.URL.Path)))
+	}
 	http.StripPrefix("/api/output/", http.FileServerFS(s.output.FS())).ServeHTTP(w, r)
 }

@@ -1,13 +1,15 @@
 services:
   seedkit:
-    image: seedkit:latest
+    image: seedkit:local
+    build:
+      context: ..
+      dockerfile: build/Dockerfile
     container_name: seedkit
     restart: unless-stopped
     ports:
-      - "18080:8080"
+      - "127.0.0.1:18080:8080"  # public access: configure HTTPS proxy first
     volumes:
-      - ./data:/data              # config.yaml, tasks.json, output/
-      - /path/to/media:/media:rw  # add as a root in settings: media -> /media
+      - ./data:/data                    # relative to this compose file
+      - /path/to/media:/media:rw        # use ro if source writes are not needed
     environment:
-      - TZ=Asia/Shanghai
-      # - SEEDKIT_PATHS_ROOTS=media=/media   # or configure in the UI
+      TZ: Asia/Shanghai

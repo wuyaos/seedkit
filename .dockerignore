@@ -1,0 +1,8 @@
+.git
+.agents
+data
+**/data
+dist
+seedkit
+seedkit*.exe
+*.log

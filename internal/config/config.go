@@ -100,7 +100,7 @@ func Default(dataDir string) *Config {
 		Auth:       Auth{SessionDays: 30},
 		Paths:      Paths{Roots: roots, Output: filepath.Join(dataDir, "output")},
 		Tasks:      Tasks{HeavyConcurrency: 2, HistoryKeep: 200},
-		Screenshot: Screenshot{Count: 5, Subtitles: true, Compress: true, SkipPercent: 5, Tonemap: "hable"},
+		Screenshot: Screenshot{Count: 5, Subtitles: true, Compress: false, SkipPercent: 5, Tonemap: "hable"},
 		Upload: Upload{
 			Default: "picgo",
 			Picgo:   PicgoUpload{Endpoint: "https://www.picgo.net/api/1/upload"},

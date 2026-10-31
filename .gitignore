@@ -1,8 +1,11 @@
 /seedkit
-/seedkit.exe
+/seedkit*.exe
 /dist/
 /data/
-/web/node_modules/
-/web/dist/*
-!/web/dist/.gitkeep
+/build/data/
 *.log
+__pycache__/
+*.py[cod]
+.env
+.env.*
+!.env.example
