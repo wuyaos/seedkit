@@ -31,14 +31,14 @@ Compose 示例的数据目录相对于文件位置，为 `build/data/`；正式�
 
 ### 使用 CI 镜像
 
-镜像发布在 `ghcr.io/wuyaos/seedkit`，首次版本标签为 `v0.1.0`。下列示例固定使用 `0.1.0`；请以 [Actions 发布结果](https://github.com/wuyaos/seedkit/actions)为准。
+镜像发布在 `ghcr.io/wuyaos/seedkit`，当前版本为 `v0.1.1`。下列示例固定使用 `0.1.1`；请以 [Actions 发布结果](https://github.com/wuyaos/seedkit/actions)为准。
 
 ```sh
 docker run -d --name seedkit --restart unless-stopped \
   -p 127.0.0.1:18080:8080 \
   -v /opt/seedkit/data:/data \
   -v /mnt/downloads:/media:rw \
-  ghcr.io/wuyaos/seedkit:0.1.0
+  ghcr.io/wuyaos/seedkit:0.1.1
 ```
 
 把 `/mnt/downloads` 换成自己的媒体目录。进入设置页添加根目录：别名 `media`，目录 `/media`。文件列表使用 `media/Movies` 这样的虚拟路径，不是服务器任意绝对路径。只需分析、截图和制种时，可将媒体挂载改为 `:ro`；此时不能修改源文件。

@@ -247,7 +247,7 @@ const app = {
     try {
       const d = await api.get('/api/fs/browse?path=' + encodeURIComponent(start || ''));
       this.pk.tree = [{ name: d.path, path: d.path, depth: 0, open: false, loaded: false, root: true }, ...d.dirs.map((x) => ({ name: x.name, path: x.path, depth: 1, open: false, loaded: false, parent: d.path }))];
-      this.$nextTick(() => { const el = document.querySelector('.dlg .tree'); if (el) el.scrollTop = 0; });
+      this.$nextTick(() => { const el = this.$refs.pkTree; if (el) el.scrollTop = 0; });
     } catch (e) { this.pk.err = e.message; }
   },
   async pkExpand(n) {
@@ -304,6 +304,17 @@ const app = {
     }
   },
   runCount() { return ['mediainfo', 'bdinfo', 'screenshot', 'torrent'].filter((k) => this.ops[k] && this.can(k)).length; },
+  followConfig(kind) {
+    let value;
+    switch (kind) {
+      case 'subtitle': value = this.cfg.screenshot?.subtitles ? '默认轨' : '不烧录'; break;
+      case 'upload': value = this.cfg.upload?.default || 'picgo'; break;
+      case 'compress': value = this.cfg.screenshot?.compress ? '开启' : '关闭'; break;
+      case 'private': value = this.cfg.torrent?.private ? '开启' : '关闭'; break;
+      case 'piece': value = this.cfg.torrent?.piece_size ? fmtSize(2 ** this.cfg.torrent.piece_size) : '自动'; break;
+    }
+    return '跟随配置（' + value + '）';
+  },
   shotDesc() {
     const c = this.cfg.screenshot || {}; const n = this.sh.count || c.count || 3;
     const sub = this.sh.lang ? (this.sh.lang === 'none' ? '无字幕' : '字幕 ' + this.sh.lang) : (c.subtitles ? '字幕' : '无字幕');
@@ -422,8 +433,24 @@ const app = {
   async openSettings() {
     try {
       const c = await api.get('/api/settings'); this.cfg = c;
-      this.set = { show: true, c: JSON.parse(JSON.stringify(c)), roots: Object.entries(c.paths.roots || {}).map(([name, path]) => ({ name, path })), err: '', busy: false, nav: 'roots', homeDraft: this.home, homeBusy: false, homeErr: '' };
+      this.set = { show: true, c: JSON.parse(JSON.stringify(c)), roots: Object.entries(c.paths.roots || {}).map(([name, path]) => ({ name, path })), err: '', busy: false, nav: 'roots', homeDraft: this.home, homeBusy: false, homeErr: '', showKey: false, keyBusy: false };
     } catch (e) { this.toast(e.message, true); }
+  },
+  async toggleKey() {
+    const s = this.set;
+    if (s.keyBusy) return;
+    if (s.showKey) { s.showKey = false; return; }
+    s.err = '';
+    if (s.c.upload.picgo.api_key.startsWith('••••')) {
+      const masked = s.c.upload.picgo.api_key; s.keyBusy = true;
+      try {
+        const r = await api.post('/api/settings/picgo-key');
+        if (this.set !== s || !s.show) return;
+        if (s.c.upload.picgo.api_key === masked) s.c.upload.picgo.api_key = r.key;
+      } catch (e) { s.err = e.message; return; }
+      finally { s.keyBusy = false; }
+    }
+    s.showKey = true;
   },
   navTo(id) { this.set.nav = id; this._navLock = Date.now() + 600; this.$refs.db?.querySelector(`[data-sec="${id}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }); },
   secScroll() {

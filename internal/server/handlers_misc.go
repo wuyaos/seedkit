@@ -295,6 +295,12 @@ func artefactPaths(raw json.RawMessage) []string {
 
 // ---------- settings / templates ----------
 
+// Full secrets are fetched only on explicit reveal, never in the settings snapshot.
+func (s *Server) handlePicgoKey(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, 200, map[string]string{"key": s.cfg.Upload.Picgo.APIKey})
+}
+
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
 	c := *s.cfg
 	c.Auth.PasswordHash = ""

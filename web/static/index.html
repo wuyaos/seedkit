@@ -141,9 +141,9 @@
             </div>
             <div class="expand" x-show="exp==='shot'">
               <label>数量 <input type="number" min="1" max="20" x-model.number="sh.count"></label>
-              <label>字幕 <select x-model="sh.lang"><option value="">跟随设置</option><option value="none">不烧录</option><option value="default">默认轨</option><option value="chi">中文</option><option value="eng">英文</option><option value="jpn">日文</option></select></label>
-              <label>上传 <select x-model="sh.upload"><option value="">跟随设置</option><option value="picgo">picgo</option><option value="pixhost">pixhost</option><option value="no">不上传</option></select></label>
-              <label>压缩 PNG <select x-model="sh.compress"><option value="">跟随设置</option><option value="1">开启（较慢）</option><option value="0">关闭（更快）</option></select></label>
+              <label>字幕 <select x-model="sh.lang"><option value="" x-text="followConfig('subtitle')"></option><option value="none">不烧录</option><option value="default">默认轨</option><option value="chi">中文</option><option value="eng">英文</option><option value="jpn">日文</option></select></label>
+              <label>上传 <select x-model="sh.upload"><option value="" x-text="followConfig('upload')"></option><option value="picgo">picgo</option><option value="pixhost">pixhost</option><option value="no">不上传</option></select></label>
+              <label>压缩 PNG <select x-model="sh.compress"><option value="" x-text="followConfig('compress')"></option><option value="1">开启（较慢）</option><option value="0">关闭（更快）</option></select></label>
             </div>
             <div class="d">PNG 压缩默认关闭；开启会减小体积，但增加处理时间，4K 图片尤其明显。关闭不降低截图分辨率。</div>
             </div>
@@ -156,8 +156,8 @@
             <div class="expand" x-show="exp==='tor'">
               <label>Tracker <input class="w" x-model="tor.announce" :placeholder="cfg.torrent?.announce||'https://…/announce'"></label>
               <label>Source <input x-model="tor.source" :placeholder="cfg.torrent?.source||''" style="width:90px"></label>
-              <label>分块 <select x-model="tor.piece"><option value="">自动</option><template x-for="p in [16,17,18,19,20,21,22,23,24,25,26]"><option :value="p" x-text="(2**p/1024/1024>=1?2**p/1024/1024+' MiB':2**p/1024+' KiB')"></option></template></select></label>
-              <label>私有 <select x-model="tor.private"><option value="">跟随设置</option><option value="1">开</option><option value="0">关</option></select></label>
+              <label>分块 <select x-model="tor.piece"><option value="" x-text="followConfig('piece')"></option><template x-for="p in [16,17,18,19,20,21,22,23,24,25,26]"><option :value="p" x-text="(2**p/1024/1024>=1?2**p/1024/1024+' MiB':2**p/1024+' KiB')"></option></template></select></label>
+              <label>私有 <select x-model="tor.private"><option value="" x-text="followConfig('private')"></option><option value="1">开</option><option value="0">关</option></select></label>
               <label style="flex:1">备注 <input style="flex:1" x-model="tor.comment"></label>
             </div>
             </div>
@@ -304,9 +304,9 @@
       <template x-if="qk.op==='screenshot'">
         <div>
           <div class="f"><label for="quick-count">截图数量（留空跟随设置）</label><input id="quick-count" x-ref="quickFirst" type="number" min="1" max="20" x-model.number="qk.sh.count" :placeholder="cfg.screenshot?.count||3"></div>
-          <div class="f"><label for="quick-sub">字幕</label><select id="quick-sub" x-model="qk.sh.lang"><option value="">跟随设置</option><option value="none">不烧录</option><option value="default">默认轨</option><option value="chi">中文</option><option value="eng">英文</option><option value="jpn">日文</option></select></div>
-          <div class="f"><label for="quick-host">上传</label><select id="quick-host" x-model="qk.sh.upload"><option value="">跟随设置</option><option value="picgo">picgo</option><option value="pixhost">pixhost</option><option value="no">不上传</option></select></div>
-          <div class="f"><label for="quick-png">压缩 PNG</label><select id="quick-png" x-model="qk.sh.compress"><option value="">跟随设置</option><option value="0">关闭（更快）</option><option value="1">开启（较慢）</option></select></div>
+          <div class="f"><label for="quick-sub">字幕</label><select id="quick-sub" x-model="qk.sh.lang"><option value="" x-text="followConfig('subtitle')"></option><option value="none">不烧录</option><option value="default">默认轨</option><option value="chi">中文</option><option value="eng">英文</option><option value="jpn">日文</option></select></div>
+          <div class="f"><label for="quick-host">上传</label><select id="quick-host" x-model="qk.sh.upload"><option value="" x-text="followConfig('upload')"></option><option value="picgo">picgo</option><option value="pixhost">pixhost</option><option value="no">不上传</option></select></div>
+          <div class="f"><label for="quick-png">压缩 PNG</label><select id="quick-png" x-model="qk.sh.compress"><option value="" x-text="followConfig('compress')"></option><option value="0">关闭（更快）</option><option value="1">开启（较慢）</option></select></div>
           <p class="muted">PNG 压缩默认关闭；开启可减小体积，但高分辨率图片处理较慢。</p>
         </div>
       </template>
@@ -314,8 +314,8 @@
         <div>
           <div class="f"><label for="quick-tracker">Tracker</label><input id="quick-tracker" x-ref="quickFirst" x-model="qk.tor.announce" :placeholder="cfg.torrent?.announce||'https://…/announce'"></div>
           <div class="f"><label for="quick-source">Source</label><input id="quick-source" x-model="qk.tor.source" :placeholder="cfg.torrent?.source||'跟随设置'"></div>
-          <div class="f"><label for="quick-piece">分块</label><select id="quick-piece" x-model="qk.tor.piece"><option value="">跟随设置 / 自动</option><template x-for="p in [16,17,18,19,20,21,22,23,24,25,26]"><option :value="p" x-text="fmtSize(2**p)"></option></template></select></div>
-          <div class="f"><label for="quick-private">私有种子</label><select id="quick-private" x-model="qk.tor.private"><option value="">跟随设置</option><option value="1">开启</option><option value="0">关闭</option></select></div>
+          <div class="f"><label for="quick-piece">分块</label><select id="quick-piece" x-model="qk.tor.piece"><option value="" x-text="followConfig('piece')"></option><template x-for="p in [16,17,18,19,20,21,22,23,24,25,26]"><option :value="p" x-text="fmtSize(2**p)"></option></template></select></div>
+          <div class="f"><label for="quick-private">私有种子</label><select id="quick-private" x-model="qk.tor.private"><option value="" x-text="followConfig('private')"></option><option value="1">开启</option><option value="0">关闭</option></select></div>
           <div class="f"><label for="quick-comment">备注</label><input id="quick-comment" x-model="qk.tor.comment"></div>
         </div>
       </template>
@@ -357,11 +357,11 @@
 
 <!-- directory picker (settings, absolute server paths) -->
 <template x-if="pk.show">
-<div class="mask" @click.self="pk.show=false">
+<div class="mask picker-mask" @click.self="pk.show=false">
   <div class="dlg glass" style="width:min(560px,94vw)">
     <h3>选择目录</h3>
     <div class="muted">服务器绝对路径；点击目录进入下层，点击右侧“选择”采用该目录</div>
-    <div class="tree glass" style="padding:6px;max-height:50vh;overflow:auto">
+    <div class="tree glass" x-ref="pkTree" style="padding:6px;max-height:50vh;overflow:auto">
       <template x-for="n in pk.tree" :key="n.path">
         <div class="pkrow" :style="`padding-left:${8+n.depth*14}px`">
           <span class="pkname" @click="pkExpand(n)"><svg class="i k"><use :href="n.open?'vendor/lucide.svg?v=bf70ed4509c6#folder-open':'vendor/lucide.svg?v=bf70ed4509c6#folder'"/></svg><span x-text="n.name"></span></span>
@@ -392,7 +392,7 @@
 <!-- settings drawer -->
 <template x-if="set.show">
 <div class="mask" @click.self="set.show=false" style="place-items:stretch end">
-  <div class="drawer glass" x-data="{c:set.c}">
+  <div class="drawer glass" x-data="{get c(){return set.c}}">
     <div class="dh">
       <svg class="i lg"><use href="vendor/lucide.svg?v=bf70ed4509c6#settings"/></svg>
       <div><div class="ttl">设置</div><div class="sub">seedkit <span x-text="st.version"></span> · 修改后点击保存生效</div></div>
@@ -410,9 +410,11 @@
         <section class="sec" data-sec="roots">
           <div class="sh"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#hard-drive"/></svg><div><h4>根目录</h4><p>文件管理器只能访问这里列出的目录，其余路径一律拒绝</p></div></div>
           <div class="roots">
-            <div class="rhead" x-show="set.roots.length"><span>名称</span><span>绝对路径</span><span></span></div>
             <template x-for="(r,i) in set.roots" :key="i">
-              <div class="rrow"><input x-model="r.name" placeholder="如 data"><div class="fieldwrap"><input x-model="r.path" placeholder="/mnt/data" spellcheck="false"><div class="suffix"><button type="button" class="btn ghost icon-btn pkbtn" title="浏览目录" aria-label="浏览目录" @click="pkOpen(i, r.path ? r.path.replace(/[\\/][^\\/]*$/, '') : '')"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#folder-open"/></svg></button></div></div><button type="button" class="btn ghost danger" @click="set.roots.splice(i,1)"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#trash-2"/></svg>移除</button></div>
+              <div class="root-entry">
+                <div class="frow"><label :for="'root-name-'+i">名称</label><div><input :id="'root-name-'+i" x-model="r.name" placeholder="如 data"><div class="d root-meta"><span x-text="'根目录 '+(i+1)"></span><button type="button" class="btn ghost danger" title="移除目录" aria-label="移除目录" @click="set.roots.splice(i,1)"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#trash-2"/></svg></button></div></div></div>
+                <div class="frow"><label :for="'root-path-'+i">绝对路径</label><div><div class="fieldwrap"><input :id="'root-path-'+i" x-model="r.path" placeholder="/mnt/data" spellcheck="false"><div class="suffix"><button type="button" class="btn ghost icon-btn pkbtn" title="浏览目录" aria-label="浏览目录" @click="pkOpen(i, r.path ? r.path.replace(/[\\/][^\\/]*$/, '') : '')"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#folder-open"/></svg></button></div></div></div></div>
+              </div>
             </template>
             <div class="rempty" x-show="!set.roots.length">还没有根目录，添加一个开始使用</div>
             <button type="button" class="btn" @click="set.roots.push({name:'',path:''})"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#folder-plus"/></svg>添加目录</button>
@@ -452,7 +454,7 @@
           <div class="frow"><label>默认图床</label><div class="inline"><div class="seg w"><span :class="{on:c.upload.default==='picgo'}" @click="c.upload.default='picgo'">picgo</span><span :class="{on:c.upload.default==='pixhost'}" @click="c.upload.default='pixhost'">pixhost</span></div></div></div>
           <div class="grp" x-show="c.upload.default==='picgo'"><div class="gt">picgo</div>
             <div class="frow"><label>API 地址</label><div><input x-model="c.upload.picgo.endpoint" placeholder="https://www.picgo.net/api/1/upload" spellcheck="false"></div></div>
-            <div class="frow"><label>API Key</label><div><div class="fieldwrap"><input x-model="c.upload.picgo.api_key" :type="set.showKey?'text':'password'" placeholder="保留原值请勿修改" autocomplete="off"><div class="suffix"><button type="button" class="btn ghost icon-btn" :class="{on:set.showKey}" :title="set.showKey?'隐藏 API Key':'显示 API Key'" :aria-label="set.showKey?'隐藏 API Key':'显示 API Key'" @click="set.showKey=!set.showKey"><svg class="i" :class="{dim:!set.showKey}"><use href="vendor/lucide.svg?v=bf70ed4509c6#eye"/></svg></button></div></div></div></div>
+            <div class="frow"><label>API Key</label><div><div class="fieldwrap"><input x-model="c.upload.picgo.api_key" :type="set.showKey?'text':'password'" placeholder="保留原值请勿修改" autocomplete="off" spellcheck="false"><div class="suffix"><button type="button" class="btn ghost icon-btn" :class="{on:set.showKey}" :title="set.showKey?'隐藏 API Key':'显示 API Key'" :aria-label="set.showKey?'隐藏 API Key':'显示 API Key'" :disabled="set.keyBusy" :aria-pressed="!!set.showKey" @click="toggleKey()"><svg class="i" :class="{dim:!set.showKey}"><use href="vendor/lucide.svg?v=bf70ed4509c6#eye"/></svg></button></div></div></div></div>
             <div class="frow"><label>相册</label><div><input x-model="c.upload.picgo.album" placeholder="可选"></div></div>
           </div>
           <div class="grp" x-show="c.upload.default==='pixhost'"><div class="gt">pixhost</div>

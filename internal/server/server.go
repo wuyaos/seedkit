@@ -124,6 +124,7 @@ func (s *Server) routes() {
 	p.HandleFunc("POST /api/bbcode/render", s.handleRender)
 	p.HandleFunc("GET /api/settings", s.handleSettingsGet)
 	p.HandleFunc("PUT /api/settings", s.handleSettingsPut)
+	p.HandleFunc("POST /api/settings/picgo-key", s.handlePicgoKey)
 
 	m.Handle("/api/", s.auth.Middleware(p))
 
