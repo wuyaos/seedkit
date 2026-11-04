@@ -346,6 +346,10 @@ html[data-theme=dark] .result-body{--scroll-thumb:rgba(220,170,200,.34);--scroll
 .tree div{padding:4px 8px;border-radius:7px;cursor:pointer;display:flex;gap:6px;align-items:center;white-space:nowrap}
 .tree div:hover{background:var(--hover)}
 .tree div.on{background:var(--sel);font-weight:600}
+.pkrow{display:flex;align-items:center;gap:6px}
+.pkrow .pkname{flex:1;display:flex;gap:6px;align-items:center;cursor:pointer;white-space:nowrap;overflow:hidden}
+.pkrow:hover{background:var(--hover)}
+.i.dim{opacity:.45}
 .lightbox{position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:70;display:grid;place-items:center;cursor:zoom-out}
 .lightbox img{max-width:96vw;max-height:94vh;box-shadow:0 10px 40px #000}
 

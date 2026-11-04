@@ -70,7 +70,8 @@ const app = {
   res: {}, tab: '', hidx: {}, bdv: 'quick', txt: { body: null, trunc: false },
   tasks: [], trayOpen: true, tlog: '',
   dl: { kind: '', name: '', dest: '', tree: [], err: '', busy: false },
-  set: { show: false, c: null, roots: [], err: '', busy: false, nav: 'roots', homeDraft: '', homeBusy: false, homeErr: '' },
+  set: { show: false, c: null, roots: [], err: '', busy: false, nav: 'roots', homeDraft: '', homeBusy: false, homeErr: '', showKey: false },
+  pk: { show: false, target: null, tree: [], err: '' },
   recent: { show: false, list: [] },
   toasts: [], lb: '',
   pet: { clip: 'idle', say: '', timer: null, pos: JSON.parse(localStorage.getItem('sk.petPos') || 'null'), drag: null },
@@ -145,7 +146,7 @@ const app = {
     if (dark) h.dataset.theme = 'dark'; else delete h.dataset.theme;
     if (this.ui.glass !== 'frosted') h.dataset.glass = this.ui.glass; else delete h.dataset.glass;
   },
-  closeAll() { this.ctx.show = false; this.pop = false; this.dl.kind = ''; this.lb = ''; this.recent.show = false; },
+  closeAll() { this.ctx.show = false; this.pop = false; this.dl.kind = ''; this.lb = ''; this.recent.show = false; this.pk.show = false; },
   toast(msg, err) { const id = Date.now() + Math.random(); this.toasts.push({ id, msg, err }); setTimeout(() => { this.toasts = this.toasts.filter((t) => t.id !== id); }, err ? 6000 : 2500); },
   async copy(text, msg) {
     try { await navigator.clipboard.writeText(text); this.toast(msg || '已复制'); }
@@ -174,7 +175,14 @@ const app = {
     p = this.normalizePath(p); const seq = ++this._dirSeq; this.loading = true;
     try {
       let entries;
-      if (!p) { const roots = await api.get('/api/fs/roots') || []; entries = roots.map(r => ({ name:r.name, path:r.name, isDir:true, kind:'dir', size:0, modTime:'' })); if (seq === this._dirSeq) this.roots = roots; }
+      if (!p) {
+        const roots = await api.get('/api/fs/roots') || [];
+        if (seq === this._dirSeq) this.roots = roots;
+        // Only one root: the root list adds no information, enter it directly
+        // so the manager opens on its subdirectories.
+        if (roots.length === 1) { if (seq !== this._dirSeq) return false; return this.go(roots[0].name); }
+        entries = roots.map(r => ({ name:r.name, path:r.name, isDir:true, kind:'dir', size:0, modTime:'' }));
+      }
       else entries = await api.get('/api/fs/list?path=' + encodeURIComponent(p)) || [];
       if (seq !== this._dirSeq) return false;
       this.entries = entries; this.cwd = p; this.ctx.show = false;
@@ -232,6 +240,38 @@ const app = {
       const i = this.dl.tree.indexOf(n); n.open = true; n.loaded = true;
       this.dl.tree.splice(i + 1, 0, ...kids.map((k) => ({ name: k.name, path: k.path, depth: n.depth + 1, open: false, loaded: false })));
     } catch (e) { this.dl.err = e.message; }
+  },
+  // ---- settings directory picker (absolute server paths) ----
+  async pkOpen(target, start) {
+    this.pk = { show: true, target, tree: [], err: '' };
+    try {
+      const d = await api.get('/api/fs/browse?path=' + encodeURIComponent(start || ''));
+      this.pk.tree = [{ name: d.path, path: d.path, depth: 0, open: false, loaded: false, root: true }, ...d.dirs.map((x) => ({ name: x.name, path: x.path, depth: 1, open: false, loaded: false, parent: d.path }))];
+    } catch (e) { this.pk.err = e.message; }
+  },
+  async pkExpand(n) {
+    if (n.loaded) { n.open = !n.open; if (!n.open) this.pk.tree = this.pk.tree.filter((x) => !x.path.startsWith(n.path + '/')); return; }
+    try {
+      const d = await api.get('/api/fs/browse?path=' + encodeURIComponent(n.path));
+      const i = this.pk.tree.indexOf(n); n.open = true; n.loaded = true;
+      this.pk.tree.splice(i + 1, 0, ...d.dirs.map((k) => ({ name: k.name, path: k.path, depth: n.depth + 1, open: false, loaded: false, parent: n.path })));
+    } catch (e) { this.pk.err = e.message; }
+  },
+  // Map an absolute path back to a virtual "<root>/<rel>" path when possible
+  // (Home must be virtual); otherwise keep the absolute path as-is.
+  pkVirtual(abs) {
+    for (const r of this.roots) {
+      const rp = (r.path || '').replace(/[\\/]+$/, '');
+      if (rp && (abs === rp || abs.startsWith(rp + '/') || abs.startsWith(rp + '\\'))) return r.name + abs.slice(rp.length).replace(/\\/g, '/');
+    }
+    return abs;
+  },
+  pkChoose(n) {
+    const val = this.pk.target === 'home' ? this.pkVirtual(n.path) : n.path;
+    if (this.pk.target === 'home') { this.set.homeDraft = val; }
+    else if (this.pk.target === 'output') { this.set.c.paths.output = val; }
+    else if (typeof this.pk.target === 'number') { this.set.roots[this.pk.target].path = val; }
+    this.pk.show = false;
   },
   async dlOk() {
     const d = this.dl; d.busy = true; d.err = '';

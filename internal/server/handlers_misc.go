@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,7 +23,47 @@ import (
 
 // ---------- auth ----------
 
+// rebuildTools re-probes ffmpeg/ffprobe and rebuilds the screenshot service.
+// It must use a long-lived context, never a request context: a cancelled
+// context stored in the screenshot service silently breaks every later
+// screenshot, and a cancelled probe would wrongly persist found=false.
+func (s *Server) rebuildTools(ctx context.Context) {
+	s.tools = tools.Resolve(ctx, s.dataDir, s.cfg.Tools.FFmpeg, s.cfg.Tools.FFprobe)
+	s.shots = screenshot.New(ctx, s.tools.FFmpeg.Path, s.tools.FFprobe.Path)
+	s.persistResolvedTools()
+}
+
+// persistResolvedTools writes PATH-discovered binaries back into config when no
+// explicit path is set, so the effective tool set is visible (and editable) in
+// settings. Resolution order stays config→bundled→PATH, so a persisted path
+// that later disappears simply falls through to bundled/PATH again.
+func (s *Server) persistResolvedTools() {
+	changed := false
+	for _, p := range []struct {
+		cfg, found *string
+		src        string
+	}{
+		{&s.cfg.Tools.FFmpeg, &s.tools.FFmpeg.Path, s.tools.FFmpeg.Source},
+		{&s.cfg.Tools.FFprobe, &s.tools.FFprobe.Path, s.tools.FFprobe.Source},
+	} {
+		if *p.cfg == "" && p.src == "path" && *p.found != "" {
+			*p.cfg = *p.found
+			changed = true
+		}
+	}
+	if changed {
+		if err := config.Save(s.dataDir, s.cfg); err != nil {
+			s.log.Error("persist resolved tools", "err", err)
+		}
+	}
+}
+
 func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
+	// Self-heal: a transient probe failure (load, timeout) must not stick as
+	// "ffmpeg not found" forever; re-resolve on read when tools are missing.
+	if !s.tools.ScreenshotReady() {
+		s.rebuildTools(context.Background())
+	}
 	writeJSON(w, 200, map[string]any{
 		"version":    s.version,
 		"needsSetup": s.auth.NeedsSetup(),
@@ -287,6 +328,7 @@ func (s *Server) handleSettingsPut(w http.ResponseWriter, r *http.Request) {
 	if in.Tasks.HeavyConcurrency < 1 {
 		in.Tasks.HeavyConcurrency = 1
 	}
+	restartRequired := in.Server.Listen != s.cfg.Server.Listen
 	*s.cfg = in
 	if err := config.Save(s.dataDir, s.cfg); err != nil {
 		writeErr(w, 500, err)
@@ -295,9 +337,8 @@ func (s *Server) handleSettingsPut(w http.ResponseWriter, r *http.Request) {
 	old := s.files
 	s.files = s.openRoots(s.cfg.Paths.Roots)
 	old.Close()
-	s.tools = tools.Resolve(r.Context(), s.dataDir, s.cfg.Tools.FFmpeg, s.cfg.Tools.FFprobe)
-	s.shots = screenshot.New(r.Context(), s.tools.FFmpeg.Path, s.tools.FFprobe.Path)
-	writeJSON(w, 200, map[string]any{"ok": true, "tools": s.tools, "restartRequired": in.Server.Listen != s.cfg.Server.Listen})
+	s.rebuildTools(context.Background())
+	writeJSON(w, 200, map[string]any{"ok": true, "tools": s.tools, "restartRequired": restartRequired})
 }
 
 func (s *Server) handleTemplates(w http.ResponseWriter, r *http.Request) {

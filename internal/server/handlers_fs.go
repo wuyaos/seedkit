@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"path"
 	"path/filepath"
+	"sort"
 
 	"github.com/wuyaos/seedkit/internal/task"
 )
@@ -14,6 +16,39 @@ import (
 
 func (s *Server) handleRoots(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, s.files.Roots())
+}
+
+type browseDir struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// handleBrowse lists direct subdirectories of an absolute server path for the
+// settings directory picker. Authenticated admins only (route is behind the
+// auth middleware); read-only, directories only, depth one per call.
+func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {
+	p := r.URL.Query().Get("path")
+	if p == "" {
+		p = "/"
+	}
+	abs, err := filepath.Abs(p)
+	if err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	des, err := os.ReadDir(abs)
+	if err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	dirs := []browseDir{}
+	for _, d := range des {
+		if d.IsDir() {
+			dirs = append(dirs, browseDir{Name: d.Name(), Path: filepath.Join(abs, d.Name())})
+		}
+	}
+	sort.Slice(dirs, func(i, j int) bool { return dirs[i].Name < dirs[j].Name })
+	writeJSON(w, 200, map[string]any{"path": abs, "dirs": dirs})
 }
 
 func (s *Server) handleList(w http.ResponseWriter, r *http.Request) {
