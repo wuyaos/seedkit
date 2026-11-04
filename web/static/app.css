@@ -343,6 +343,10 @@ html[data-theme=dark] .result-body{--scroll-thumb:rgba(220,170,200,.34);--scroll
 .toast.err{color:var(--err)}
 @keyframes in{from{opacity:0;transform:translateY(-6px)}}
 .tree{font-size:12.5px;max-height:50vh;overflow:auto}
+.fieldwrap{position:relative;display:flex}
+.fieldwrap input{padding-right:32px}
+.fieldwrap .suffix{position:absolute;right:3px;top:50%;transform:translateY(-50%);display:flex;gap:2px}
+.fieldwrap .suffix .btn.icon-btn{width:26px;height:26px;padding:0;border-color:transparent;background:transparent}
 .tree div{padding:4px 8px;border-radius:7px;cursor:pointer;display:flex;gap:6px;align-items:center;white-space:nowrap}
 .tree div:hover{background:var(--hover)}
 .tree div.on{background:var(--sel);font-weight:600}

@@ -247,6 +247,7 @@ const app = {
     try {
       const d = await api.get('/api/fs/browse?path=' + encodeURIComponent(start || ''));
       this.pk.tree = [{ name: d.path, path: d.path, depth: 0, open: false, loaded: false, root: true }, ...d.dirs.map((x) => ({ name: x.name, path: x.path, depth: 1, open: false, loaded: false, parent: d.path }))];
+      this.$nextTick(() => { const el = document.querySelector('.dlg .tree'); if (el) el.scrollTop = 0; });
     } catch (e) { this.pk.err = e.message; }
   },
   async pkExpand(n) {
