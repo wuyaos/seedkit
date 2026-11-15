@@ -49,6 +49,25 @@ const KIND_LABEL = { dir: '目录', bdmv: '蓝光原盘', iso: 'ISO 镜像', vid
 const OP_ICON = { mediainfo: 'vendor/lucide.svg?v=bf70ed4509c6#info', bdinfo: 'vendor/lucide.svg?v=bf70ed4509c6#disc-3', screenshot: 'vendor/lucide.svg?v=bf70ed4509c6#camera', torrent: 'vendor/lucide.svg?v=bf70ed4509c6#magnet' };
 const OP_NAME = { mediainfo: 'MediaInfo', bdinfo: 'BDInfo', screenshot: '截图', torrent: '种子' };
 
+// ---- upload hosts (shared contract: config.Upload / upload.Uploader) ----
+const UPLOAD_HOSTS = [
+  { v: 'picgo', l: 'picgo' }, { v: 'pixhost', l: 'pixhost' }, { v: 'imgbb', l: 'imgbb' },
+  { v: 'freeimage', l: 'freeimage' }, { v: 'agsv', l: 'AGSV' }, { v: 'pterclub', l: 'PterClub' },
+];
+// field holding the secret for each host's settings object (masked on GET /api/settings)
+const UPLOAD_SECRET_FIELD = { picgo: 'api_key', imgbb: 'api_key', freeimage: 'api_key', agsv: 'token', pterclub: 'cookie' };
+// default shape for each host's config object; used to backfill settings opened against
+// an older config.yaml that predates these hosts (keeps old picgo/pixhost config intact).
+const UPLOAD_DEFAULTS = {
+  picgo: { endpoint: '', api_key: '', album: '' },
+  pixhost: { content_type: 0, max_th: 350, domain: 'to' },
+  imgbb: { api_key: '' },
+  freeimage: { api_key: '' },
+  agsv: { token: '' },
+  pterclub: { cookie: '' },
+};
+const SHOT_STATUS_LABEL = { success: '已上传', cached: '已上传（缓存）', failed: '上传失败', cancelled: '已取消', pending: '未上传' };
+
 const app = {
   // ---- state ----
   ready: false,
@@ -113,19 +132,25 @@ const app = {
       const t = JSON.parse(ev.data).task; const i = this.tasks.findIndex((x) => x.id === t.id);
       const before = i >= 0 ? this.tasks[i].status : null;
       if (i >= 0) this.tasks.splice(i, 1, t); else this.tasks.unshift(t);
-      if (before !== t.status && (t.status === 'done' || t.status === 'failed')) this.onTaskEnd(t);
+      if (before !== t.status && this.isEnd(t)) this.onTaskEnd(t);
       this.petMood();
     });
     es.onerror = () => { es.close(); this._es = null; setTimeout(() => { if (this.st.authed) this.sse(); }, 3000); };
     this._es = es;
   },
   onTaskEnd(t) {
+    // Backend tasks (notably screenshot upload batches) persist partial results even
+    // on failure/cancellation — e.g. some shots uploaded before a later one failed, or
+    // the task was cancelled mid-batch. loadRes() must run for every terminal status,
+    // not just 'done', or the UI shows a stale/empty result panel for a task that
+    // actually produced usable output.
     if (t.status === 'failed') { this.toast(`${t.title}：${t.error}`, true); this.petSay('sigh', '失败了…看看日志？'); }
+    else if (t.status === 'cancelled') { this.toast(t.title + ' 已取消', true); }
     else {
       if (t.kind === 'fileop') { this.refresh(); this.toast(t.title + ' 完成'); }
       else if (t.kind !== 'upload') this.petSay('cheer', t.title + ' 完成');
-      if (this.cur) this.loadRes();
     }
+    if (this.cur) this.loadRes();
   },
 
   // ---- auth ----
@@ -396,9 +421,22 @@ const app = {
   hasRes() { return Object.values(this.res).some((l) => l.length); },
   rec() { const l = this.res[this.tab]; if (!l?.length) return null; return l[Math.min(+this.hidx[this.tab] || 0, l.length - 1)]; },
   kindIcon(k) { return OP_ICON[k] || 'vendor/lucide.svg?v=bf70ed4509c6#file'; }, kindName(k) { return OP_NAME[k] || k; },
-  uploaded(r) { return (r.data.shots || []).filter((s) => s.url); },
-  pending(r) { return (r.data.shots || []).filter((s) => !s.url); },
-  async reupload(r) { try { const t = await api.post('/api/screenshot/reupload', { ID: r.id, Host: this.sh.upload && this.sh.upload !== 'no' ? this.sh.upload : '' }); this.tasks.unshift(t); this.trayOpen = true; } catch (e) { this.toast(e.message, true); } },
+  // Legacy records only ever had a bare `url` field; new records add upload_status
+  // (success/cached/failed/cancelled). Treat a present url with no status as success
+  // so old screenshot results keep working unchanged.
+  shotStatus(s) { return s.upload_status || (s.url ? 'success' : 'pending'); },
+  shotStatusLabel(s) { return SHOT_STATUS_LABEL[this.shotStatus(s)] || this.shotStatus(s); },
+  uploaded(r) { return (r.data.shots || []).filter((s) => ['success', 'cached'].includes(this.shotStatus(s))); },
+  pending(r) { return (r.data.shots || []).filter((s) => !['success', 'cached'].includes(this.shotStatus(s))); },
+  async reupload(r, opts = {}) {
+    try {
+      const t = await api.post('/api/screenshot/reupload', {
+        ID: r.id, Host: this.sh.upload && this.sh.upload !== 'no' ? this.sh.upload : '',
+        All: !!opts.all, Force: !!opts.force,
+      });
+      this.tasks.unshift(t); this.trayOpen = true;
+    } catch (e) { this.toast(e.message, true); }
+  },
   async delRes(r, files) {
     if (files && !confirm('同时删除产物文件（截图 / 种子）？\n确定 = 一并删除，取消 = 仅删记录')) files = false;
     try { await api.del(`/api/results/${r.id}${files ? '?files=1' : ''}`); await this.loadRes(); } catch (e) { this.toast(e.message, true); }
@@ -433,24 +471,45 @@ const app = {
   async openSettings() {
     try {
       const c = await api.get('/api/settings'); this.cfg = c;
-      this.set = { show: true, c: JSON.parse(JSON.stringify(c)), roots: Object.entries(c.paths.roots || {}).map(([name, path]) => ({ name, path })), err: '', busy: false, nav: 'roots', homeDraft: this.home, homeBusy: false, homeErr: '', showKey: false, keyBusy: false };
+      const draft = JSON.parse(JSON.stringify(c));
+      this.backfillUpload(draft);
+      this.set = { show: true, c: draft, roots: Object.entries(c.paths.roots || {}).map(([name, path]) => ({ name, path })), err: '', busy: false, nav: 'roots', homeDraft: this.home, homeBusy: false, homeErr: '', showSecret: {}, secretBusy: {} };
     } catch (e) { this.toast(e.message, true); }
   },
-  async toggleKey() {
-    const s = this.set;
-    if (s.keyBusy) return;
-    if (s.showKey) { s.showKey = false; return; }
-    s.err = '';
-    if (s.c.upload.picgo.api_key.startsWith('••••')) {
-      const masked = s.c.upload.picgo.api_key; s.keyBusy = true;
-      try {
-        const r = await api.post('/api/settings/picgo-key');
-        if (this.set !== s || !s.show) return;
-        if (s.c.upload.picgo.api_key === masked) s.c.upload.picgo.api_key = r.key;
-      } catch (e) { s.err = e.message; return; }
-      finally { s.keyBusy = false; }
+  // Backfill missing per-host upload config objects (and pixhost.domain / upload.concurrency)
+  // so settings opened against an older config.yaml that predates new hosts still binds cleanly;
+  // existing picgo/pixhost values are kept untouched.
+  backfillUpload(draft) {
+    draft.upload = draft.upload || {};
+    const u = draft.upload;
+    if (!u.default) u.default = 'picgo';
+    if (!u.concurrency) u.concurrency = 3;
+    for (const host of Object.keys(UPLOAD_DEFAULTS)) {
+      u[host] = Object.assign({}, UPLOAD_DEFAULTS[host], u[host] || {});
     }
-    s.showKey = true;
+  },
+  // Generalized reveal/mask toggle for any upload host's secret field
+  // (UPLOAD_SECRET_FIELD[host] names the field: api_key/token/cookie). Uses the
+  // new POST /api/settings/upload-secret {Host} endpoint for every host, including
+  // picgo — the old POST /api/settings/picgo-key endpoint stays server-side for
+  // back-compat but this UI no longer needs to call it directly.
+  async toggleSecret(host) {
+    const s = this.set;
+    if (s.secretBusy[host]) return;
+    if (s.showSecret[host]) { s.showSecret[host] = false; return; }
+    s.err = '';
+    const field = UPLOAD_SECRET_FIELD[host];
+    const obj = s.c.upload[host];
+    if (field && obj && String(obj[field] || '').startsWith('••••')) {
+      const masked = obj[field]; s.secretBusy[host] = true;
+      try {
+        const r = await api.post('/api/settings/upload-secret', { Host: host });
+        if (this.set !== s || !s.show) return;
+        if (obj[field] === masked) obj[field] = r.key;
+      } catch (e) { s.err = e.message; return; }
+      finally { s.secretBusy[host] = false; }
+    }
+    s.showSecret[host] = true;
   },
   navTo(id) { this.set.nav = id; this._navLock = Date.now() + 600; this.$refs.db?.querySelector(`[data-sec="${id}"]`)?.scrollIntoView({ block: 'start', behavior: 'smooth' }); },
   secScroll() {
@@ -501,7 +560,46 @@ const app = {
     this.pet.timer = setTimeout(() => { this.pet.say = ''; this.pet.timer = null; this.petMood(); }, 4500);
   },
 
+  // ---- BBCode copy formats (plain link / full [img] / thumb+link) ----
+  // Fixed order per spec: links, full image, thumbnail. All operate on uploaded(r)
+  // (status-aware, legacy-url-compatible — see uploaded()/shotStatus() above). When
+  // some shots in the batch failed/are pending, the toast calls that out explicitly
+  // (“仅成功项 X/Y”) rather than silently copying a subset with no explanation.
+  partialSuffix(r) {
+    const total = (r.data.shots || []).length, ok = this.uploaded(r).length;
+    return ok < total ? `（仅成功项 ${ok}/${total}）` : '';
+  },
+  copyLinks(r) {
+    const l = this.uploaded(r); if (!l.length) return;
+    this.copy(l.map((s) => s.url).join('\n'), '已复制 ' + l.length + ' 个链接' + this.partialSuffix(r));
+  },
+  copyImg(r) {
+    const l = this.uploaded(r); if (!l.length) return;
+    this.copy(l.map((s) => '[img]' + s.url + '[/img]').join('\n'), '已复制 ' + l.length + ' 个 [img]' + this.partialSuffix(r));
+  },
+  // Thumbnail mode requires EVERY successful item to have a real thumb_url. If even
+  // one is missing, the mode is disabled entirely (never silently copy a mixed set
+  // with some items falling back to the full image) — use [img] or link format
+  // instead for that batch. The [url=] wrapper links to the original image (s.url),
+  // not a host "page" URL, since page_url is a separate, optional field.
+  allHaveThumb(r) {
+    const l = this.uploaded(r); return l.length > 0 && l.every((s) => s.thumb_url);
+  },
+  copyThumb(r) {
+    if (!this.allHaveThumb(r)) { this.toast('并非所有成功项都有缩略图，缩略图模式不可用，请使用 [img] 或链接格式', true); return; }
+    const l = this.uploaded(r);
+    const body = l.map((s) => `[url=${s.url}][img]${s.thumb_url}[/img][/url]`).join('\n');
+    this.copy(body, '已复制 ' + l.length + ' 个缩略图代码' + this.partialSuffix(r));
+  },
+
+  UPLOAD_HOSTS, UPLOAD_DEFAULTS, UPLOAD_SECRET_FIELD, SHOT_STATUS_LABEL,
   fmtSize, fmtTime, fmtDur,
 };
+
+// Additive, browser-safe export for Node-based tests (web/*.test.js). Browsers never
+// define `module`, so this has no effect on the served app.
+if (typeof module !== 'undefined') {
+  module.exports = { api, app, UPLOAD_HOSTS, UPLOAD_DEFAULTS, UPLOAD_SECRET_FIELD, SHOT_STATUS_LABEL, fmtSize, fmtTime, fmtDur, pad, ago };
+}
 
 document.addEventListener('alpine:init', () => { Alpine.data('app', () => app); });

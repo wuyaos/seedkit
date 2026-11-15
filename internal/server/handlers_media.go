@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -12,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/wuyaos/seedkit/internal/config"
 	"github.com/wuyaos/seedkit/internal/media"
 	"github.com/wuyaos/seedkit/internal/screenshot"
 	"github.com/wuyaos/seedkit/internal/task"
@@ -22,18 +22,29 @@ import (
 // ---------- media / screenshot / upload / torrent ----------
 
 func (s *Server) uploader(name string) (upload.Uploader, error) {
+	return uploaderFor(s.configSnapshot().Upload, name)
+}
+
+func uploaderFor(c config.Upload, name string) (upload.Uploader, error) {
 	if name == "" {
-		name = s.cfg.Upload.Default
+		name = c.Default
 	}
 	switch name {
 	case "picgo":
-		p := s.cfg.Upload.Picgo
-		return &upload.Picgo{Endpoint: p.Endpoint, APIKey: p.APIKey, Album: p.Album}, nil
+		return &upload.Picgo{Endpoint: c.Picgo.Endpoint, APIKey: c.Picgo.APIKey, Album: c.Picgo.Album}, nil
 	case "pixhost":
-		p := s.cfg.Upload.Pixhost
-		return &upload.Pixhost{ContentType: p.ContentType, MaxTh: p.MaxTh}, nil
+		return &upload.Pixhost{ContentType: c.Pixhost.ContentType, MaxTh: c.Pixhost.MaxTh, Domain: c.Pixhost.Domain}, nil
+	case "imgbb":
+		return &upload.Imgbb{APIKey: c.Imgbb.APIKey}, nil
+	case "freeimage":
+		return &upload.Freeimage{APIKey: c.Freeimage.APIKey}, nil
+	case "agsv":
+		return &upload.AGSV{Token: c.AGSV.Token}, nil
+	case "pterclub":
+		return &upload.Pterclub{Cookie: c.Pterclub.Cookie}, nil
+	default:
+		return nil, errors.New("unknown image host")
 	}
-	return nil, fmt.Errorf("unknown image host %q", name)
 }
 
 func (s *Server) handleMediaInfo(w http.ResponseWriter, r *http.Request) {
@@ -144,32 +155,35 @@ func (s *Server) handleScreenshot(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) screenshotJob(abs string, in screenshotReq) task.Job {
+	cfg := s.configSnapshot()
+	shotsService := s.shots
 	return func(ctx context.Context, rep task.Reporter) (any, error) {
 		src, err := screenshot.ResolveSource(abs)
 		if err != nil {
 			return nil, err
 		}
 		opt := screenshot.Options{
-			Count: in.Count, SkipPercent: s.cfg.Screenshot.SkipPercent,
-			Language: in.Language, Tonemap: s.cfg.Screenshot.Tonemap, Compress: s.cfg.Screenshot.Compress,
+			Count: in.Count, SkipPercent: cfg.Screenshot.SkipPercent,
+			Language: in.Language, Tonemap: cfg.Screenshot.Tonemap, Compress: cfg.Screenshot.Compress,
 		}
 		if opt.Count == 0 {
-			opt.Count = s.cfg.Screenshot.Count
+			opt.Count = cfg.Screenshot.Count
 		}
-		if in.Language == "" && !s.cfg.Screenshot.Subtitles {
+		if in.Language == "" && !cfg.Screenshot.Subtitles {
 			opt.Language = "none"
 		}
 		if in.Compress != nil {
 			opt.Compress = *in.Compress
 		}
 		outDir := s.outputDir(safeBase(in.Path))
-		res, err := s.shots.Run(ctx, src, outDir, opt, rep)
+		res, err := shotsService.Run(ctx, src, outDir, opt, rep)
 		if err != nil {
 			return res, err
 		}
 		type shotOut struct {
 			screenshot.Shot
 			URL string `json:"url"`
+			uploadFields
 			Web string `json:"web"`
 		}
 		out := struct {
@@ -181,7 +195,7 @@ func (s *Server) screenshotJob(abs string, in screenshotReq) task.Job {
 			out.Shots = append(out.Shots, shotOut{Shot: sh, Web: s.outputWeb(sh.Path)})
 		}
 		if in.Upload {
-			up, err := s.uploader(in.Host)
+			up, err := uploaderFor(cfg.Upload, in.Host)
 			if err != nil {
 				s.record("screenshot", in.Path, rep.ID(), out)
 				return out, err
@@ -191,20 +205,17 @@ func (s *Server) screenshotJob(abs string, in screenshotReq) task.Job {
 				paths[i] = sh.Path
 			}
 			rep.Progress(-1, "uploading")
-			i := 0
-			out.Uploads = upload.UploadAll(ctx, up, paths, func(r upload.Result) {
-				if r.Err != "" {
-					rep.Logf("upload %s failed: %s", filepath.Base(r.File), r.Err)
-				} else {
-					rep.Logf("uploaded %s → %s", filepath.Base(r.File), r.URL)
-					out.Shots[i].URL = r.URL
+			out.Uploads = s.uploadEngine.UploadAll(ctx, up, paths, upload.Options{Concurrency: cfg.Upload.Concurrency}, func(r upload.Result) {
+				if r.Index >= 0 && r.Index < len(out.Shots) {
+					out.Shots[r.Index].uploadFields = fieldsFor(r)
+					out.Shots[r.Index].URL = r.URL
 				}
-				i++
+				logUpload(rep, r)
 			})
 			appendURLs(outDir, out.Uploads)
 		}
 		s.record("screenshot", in.Path, rep.ID(), out)
-		return out, nil
+		return out, uploadOutcome(ctx, out.Uploads)
 	}
 }
 
@@ -226,123 +237,6 @@ func (s *Server) record(kind, vpath, taskID string, data any) {
 	if _, err := s.results.Add(kind, strings.Trim(vpath, "/"), path.Base(vpath), taskID, data); err != nil {
 		s.log.Warn("results save failed", "err", err)
 	}
-}
-
-// handleReupload uploads the not-yet-uploaded (or all) shots of a screenshot
-// record and patches the record's URLs in place.
-func (s *Server) handleReupload(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		ID   string
-		Host string
-		All  bool
-	}
-	if err := readJSON(r, &in); err != nil {
-		writeErr(w, 400, err)
-		return
-	}
-	rec, ok := s.results.Get(in.ID)
-	if !ok || rec.Kind != "screenshot" {
-		writeErr(w, 404, errors.New("screenshot record not found"))
-		return
-	}
-	up, err := s.uploader(in.Host)
-	if err != nil {
-		writeErr(w, 400, err)
-		return
-	}
-	var data shotRecord
-	if err := json.Unmarshal(rec.Data, &data); err != nil {
-		writeErr(w, 500, err)
-		return
-	}
-	var todo []string
-	for _, sh := range data.Shots {
-		if in.All || sh.URL == "" {
-			todo = append(todo, sh.Path)
-		}
-	}
-	if len(todo) == 0 {
-		writeErr(w, 400, errors.New("nothing to upload"))
-		return
-	}
-	t := s.tasks.Submit("upload", fmt.Sprintf("补传 %d 张 → %s · %s", len(todo), up.Name(), rec.Title), false,
-		func(ctx context.Context, rep task.Reporter) (any, error) {
-			n := 0
-			res := upload.UploadAll(ctx, up, todo, func(r upload.Result) {
-				n++
-				rep.Progress(float64(n)/float64(len(todo)), filepath.Base(r.File))
-				if r.Err != "" {
-					rep.Logf("%s: %s", filepath.Base(r.File), r.Err)
-				}
-			})
-			byPath := map[string]string{}
-			for _, u := range res {
-				if u.URL != "" {
-					byPath[u.File] = u.URL
-				}
-			}
-			_ = s.results.Update(rec.ID, func(raw json.RawMessage) (any, error) {
-				var d map[string]any
-				if err := json.Unmarshal(raw, &d); err != nil {
-					return nil, err
-				}
-				shots, _ := d["shots"].([]any)
-				for _, x := range shots {
-					m, _ := x.(map[string]any)
-					p, _ := m["path"].(string)
-					if u, ok := byPath[p]; ok {
-						m["url"] = u
-					}
-				}
-				d["shots"] = shots
-				return d, nil
-			})
-			appendURLs(filepath.Dir(todo[0]), res)
-			return res, nil
-		})
-	writeJSON(w, 202, t)
-}
-
-type shotRecord struct {
-	Shots []struct {
-		Path string `json:"path"`
-		URL  string `json:"url"`
-	} `json:"shots"`
-}
-
-func (s *Server) handleUpload(w http.ResponseWriter, r *http.Request) {
-	var in struct {
-		Files []string // relative to output dir
-		Host  string
-	}
-	if err := readJSON(r, &in); err != nil {
-		writeErr(w, 400, err)
-		return
-	}
-	up, err := s.uploader(in.Host)
-	if err != nil {
-		writeErr(w, 400, err)
-		return
-	}
-	abs := make([]string, 0, len(in.Files))
-	for _, f := range in.Files {
-		if p, err := s.output.Path(f); err == nil {
-			abs = append(abs, p)
-		}
-	}
-	t := s.tasks.Submit("upload", fmt.Sprintf("上传 %d 张图片 → %s", len(abs), up.Name()), false,
-		func(ctx context.Context, rep task.Reporter) (any, error) {
-			n := 0
-			res := upload.UploadAll(ctx, up, abs, func(r upload.Result) {
-				n++
-				rep.Progress(float64(n)/float64(len(abs)), filepath.Base(r.File))
-				if r.Err != "" {
-					rep.Logf("%s: %s", filepath.Base(r.File), r.Err)
-				}
-			})
-			return res, nil
-		})
-	writeJSON(w, 202, t)
 }
 
 type torrentReq struct {
@@ -370,25 +264,26 @@ func (s *Server) handleTorrent(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) torrentJob(abs string, in torrentReq) task.Job {
+	cfg := s.configSnapshot()
 	return func(ctx context.Context, rep task.Reporter) (any, error) {
 		opt := torrent.Options{
 			Announce: in.Announce, Source: in.Source, Comment: in.Comment,
-			Private: s.cfg.Torrent.Private, Workers: s.cfg.Tasks.HeavyConcurrency + 1,
+			Private: cfg.Torrent.Private, Workers: cfg.Tasks.HeavyConcurrency + 1,
 			CreatedBy: "seedkit " + s.version,
 		}
 		if opt.Announce == "" {
-			opt.Announce = s.cfg.Torrent.Announce
+			opt.Announce = cfg.Torrent.Announce
 		}
 		if opt.Source == "" {
-			opt.Source = s.cfg.Torrent.Source
+			opt.Source = cfg.Torrent.Source
 		}
 		if in.Private != nil {
 			opt.Private = *in.Private
 		}
 		if in.PieceSize > 0 {
 			opt.PieceSizeExp = uint(in.PieceSize)
-		} else if s.cfg.Torrent.PieceSize > 0 {
-			opt.PieceSizeExp = uint(s.cfg.Torrent.PieceSize)
+		} else if cfg.Torrent.PieceSize > 0 {
+			opt.PieceSizeExp = uint(cfg.Torrent.PieceSize)
 		}
 		dst := filepath.Join(s.outputDir(safeBase(in.Path)), filepath.Base(abs)+".torrent")
 		res, err := torrent.Create(ctx, abs, dst, opt, rep.Progress)

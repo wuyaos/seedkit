@@ -41,6 +41,13 @@ ssh -L 18080:127.0.0.1:18080 your-server
 | `SEEDKIT_TASKS_HEAVY_CONCURRENCY` | 重任务并发数 |
 | `SEEDKIT_TOOLS_FFMPEG` / `SEEDKIT_TOOLS_FFPROBE` | 工具路径 |
 | `SEEDKIT_UPLOAD_PICGO_API_KEY` | PicGo API 密钥 |
+| `SEEDKIT_UPLOAD_DEFAULT` / `SEEDKIT_UPLOAD_CONCURRENCY` | 默认图床 / 图片上传并发（默认 3，网页设置范围 1–8） |
+| `SEEDKIT_UPLOAD_PICGO_ENDPOINT` / `SEEDKIT_UPLOAD_PICGO_ALBUM` | PicGo 接口地址 / 相册 |
+| `SEEDKIT_UPLOAD_PIXHOST_DOMAIN` | Pixhost 域名后缀 `to` 或 `cc` |
+| `SEEDKIT_UPLOAD_PIXHOST_CONTENT_TYPE` / `SEEDKIT_UPLOAD_PIXHOST_MAX_TH` | Pixhost 内容类型 / 缩略图大小 |
+| `SEEDKIT_UPLOAD_IMGBB_API_KEY` / `SEEDKIT_UPLOAD_FREEIMAGE_API_KEY` | ImgBB / Freeimage API 密钥 |
+| `SEEDKIT_UPLOAD_AGSV_TOKEN` | AGSV Token |
+| `SEEDKIT_UPLOAD_PTERCLUB_COOKIE` | PterClub 图床域名 Cookie，仅发送至固定图床域名 |
 | `SEEDKIT_TORRENT_ANNOUNCE` | 默认 tracker announce |
 
 其余设置通过网页或 `config.yaml` 修改。变更环境变量后重建/重启容器；保存网页设置不会移除容器的环境覆盖。

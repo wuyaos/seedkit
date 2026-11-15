@@ -150,14 +150,15 @@ func (m *Manager) finish(t *Task, res any, err error) {
 	}
 	m.update(t, func() {
 		t.Finished = &now
+		// A failed or cancelled batch can still contain useful successful items.
+		if res != nil {
+			if b, e := json.Marshal(res); e == nil {
+				t.Result = b
+			}
+		}
 		switch {
 		case err == nil:
 			t.Status, t.Progress = Done, 1
-			if res != nil {
-				if b, e := json.Marshal(res); e == nil {
-					t.Result = b
-				}
-			}
 		case errors.Is(err, context.Canceled):
 			t.Status, t.Error = Cancelled, "cancelled"
 		default:

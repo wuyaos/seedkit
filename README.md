@@ -8,7 +8,7 @@ Go 后端内嵌 Alpine.js 静态界面，无 Node.js、Java 或 .NET 常驻进�
 
 - **文件管理**：配置多个根目录，浏览、预览、创建目录、复制、移动、重命名和删除；支持可设置的 Home、路径跳转与右键任务入口。
 - **媒体报告**：提取 MediaInfo 和蓝光 BDInfo，查看、复制和下载结果。
-- **截图与上传**：选择截图数量、字幕与处理选项，下载图片或上传到已配置图床；PNG 256 色量化与 Floyd–Steinberg 抖动可选，默认关闭。
+- **截图与上传**：支持 PicGo、Pixhost、ImgBB、Freeimage、AGSV，以及 PterClub Cookie 适配；支持哈希缓存、保序批量上传、失败项补传与 BBCode 复制。PNG 256 色量化与 Floyd–Steinberg 抖动可选，默认关闭。详见[图床上传说明](docs/image-hosts.md)。
 - **制种**：基于 mkbrr 生成 torrent，确认 tracker、source、piece size 等参数后提交。
 - **任务与成果**：通过 SSE 接收进度，查看日志、取消任务；任务历史与成果索引分别管理，清理任务不会自动删除成果。
 - **界面**：明暗主题、磨砂 / 玻璃风格、壁纸和可关闭的看板娘，静态资产本地提供，不依赖运行时 CDN。
@@ -69,6 +69,7 @@ SEEDKIT_DATA=./data ./seedkit doctor
 | `config.yaml` | 管理员密码哈希、根目录、任务与图床设置 |
 | `tasks.json` | 任务历史 |
 | `results.json` | 独立的成果索引 |
+| `upload-cache.json` | 按图床和凭据身份隔离的成功图片链接缓存，不含明文凭据 |
 | `output/` | 默认的截图、报告、torrent 等产物，可通过 `paths.output` 修改 |
 
 升级时保留整个数据目录以及自定义输出目录。图床密钥、配置文件、cookie 和私有 tracker 地址不要提交到仓库；设置 API 返回的密钥已脱敏。支持的环境变量见[部署说明](docs/deployment.md#环境变量)。

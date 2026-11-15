@@ -28,7 +28,8 @@ import (
 // context stored in the screenshot service silently breaks every later
 // screenshot, and a cancelled probe would wrongly persist found=false.
 func (s *Server) rebuildTools(ctx context.Context) {
-	s.tools = tools.Resolve(ctx, s.dataDir, s.cfg.Tools.FFmpeg, s.cfg.Tools.FFprobe)
+	cfg := s.configSnapshot()
+	s.tools = tools.Resolve(ctx, s.dataDir, cfg.Tools.FFmpeg, cfg.Tools.FFprobe)
 	s.shots = screenshot.New(ctx, s.tools.FFmpeg.Path, s.tools.FFprobe.Path)
 	s.persistResolvedTools()
 }
@@ -38,6 +39,8 @@ func (s *Server) rebuildTools(ctx context.Context) {
 // settings. Resolution order stays config→bundled→PATH, so a persisted path
 // that later disappears simply falls through to bundled/PATH again.
 func (s *Server) persistResolvedTools() {
+	s.cfgMu.Lock()
+	defer s.cfgMu.Unlock()
 	changed := false
 	for _, p := range []struct {
 		cfg, found *string
@@ -88,9 +91,12 @@ func (s *Server) handleSetup(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 500, err)
 		return
 	}
+	s.cfgMu.Lock()
 	s.cfg.Auth.Username, s.cfg.Auth.PasswordHash = in.Username, hash
-	if err := config.Save(s.dataDir, s.cfg); err != nil {
-		writeErr(w, 500, err)
+	err = config.Save(s.dataDir, s.cfg)
+	s.cfgMu.Unlock()
+	if err != nil {
+		writeErr(w, 500, errors.New("could not save credentials"))
 		return
 	}
 	tok, ok, _ := s.auth.Login(r, in.Username, in.Password)
@@ -298,16 +304,11 @@ func artefactPaths(raw json.RawMessage) []string {
 // Full secrets are fetched only on explicit reveal, never in the settings snapshot.
 func (s *Server) handlePicgoKey(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	writeJSON(w, 200, map[string]string{"key": s.cfg.Upload.Picgo.APIKey})
+	writeJSON(w, 200, map[string]string{"key": s.configSnapshot().Upload.Picgo.APIKey})
 }
 
 func (s *Server) handleSettingsGet(w http.ResponseWriter, r *http.Request) {
-	c := *s.cfg
-	c.Auth.PasswordHash = ""
-	if c.Upload.Picgo.APIKey != "" {
-		c.Upload.Picgo.APIKey = "••••" + lastN(c.Upload.Picgo.APIKey, 4)
-	}
-	writeJSON(w, 200, c)
+	s.handleSettingsGetUpload(w, r)
 }
 
 func lastN(s string, n int) string {
@@ -318,33 +319,7 @@ func lastN(s string, n int) string {
 }
 
 func (s *Server) handleSettingsPut(w http.ResponseWriter, r *http.Request) {
-	var in config.Config
-	if err := readJSON(r, &in); err != nil {
-		writeErr(w, 400, err)
-		return
-	}
-	// Preserve secrets unless explicitly replaced.
-	in.Auth = s.cfg.Auth
-	if strings.HasPrefix(in.Upload.Picgo.APIKey, "••••") || in.Upload.Picgo.APIKey == "" {
-		in.Upload.Picgo.APIKey = s.cfg.Upload.Picgo.APIKey
-	}
-	if in.Paths.Output == "" {
-		in.Paths.Output = s.cfg.Paths.Output
-	}
-	if in.Tasks.HeavyConcurrency < 1 {
-		in.Tasks.HeavyConcurrency = 1
-	}
-	restartRequired := in.Server.Listen != s.cfg.Server.Listen
-	*s.cfg = in
-	if err := config.Save(s.dataDir, s.cfg); err != nil {
-		writeErr(w, 500, err)
-		return
-	}
-	old := s.files
-	s.files = s.openRoots(s.cfg.Paths.Roots)
-	old.Close()
-	s.rebuildTools(context.Background())
-	writeJSON(w, 200, map[string]any{"ok": true, "tools": s.tools, "restartRequired": restartRequired})
+	s.handleSettingsPutUpload(w, r)
 }
 
 func (s *Server) handleTemplates(w http.ResponseWriter, r *http.Request) {

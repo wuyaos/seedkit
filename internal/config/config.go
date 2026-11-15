@@ -24,66 +24,68 @@ type Config struct {
 	Upload     Upload     `yaml:"upload" json:"upload"`
 	Torrent    Torrent    `yaml:"torrent" json:"torrent"`
 }
-
 type Server struct {
-	Listen string `yaml:"listen" json:"listen"` // ":8080"
+	Listen string `yaml:"listen" json:"listen"`
 }
-
 type Auth struct {
 	Username     string `yaml:"username" json:"username"`
-	PasswordHash string `yaml:"password_hash" json:"password_hash"` // bcrypt; empty => setup required
+	PasswordHash string `yaml:"password_hash" json:"password_hash"`
 	SessionDays  int    `yaml:"session_days" json:"session_days"`
 }
-
 type Paths struct {
-	// Roots are the only directories exposed to the file manager. Keys are
-	// display names, values are absolute paths.
-	Roots map[string]string `yaml:"roots" json:"roots"`
-	// Output holds screenshots, reports and torrents. Inside DataDir by default.
-	Output string `yaml:"output" json:"output"`
+	Roots  map[string]string `yaml:"roots" json:"roots"`
+	Output string            `yaml:"output" json:"output"`
 }
-
 type Tasks struct {
-	HeavyConcurrency int `yaml:"heavy_concurrency" json:"heavy_concurrency"` // BDInfo/screenshot/torrent
+	HeavyConcurrency int `yaml:"heavy_concurrency" json:"heavy_concurrency"`
 	HistoryKeep      int `yaml:"history_keep" json:"history_keep"`
 }
-
 type Tools struct {
 	FFmpeg  string `yaml:"ffmpeg" json:"ffmpeg"`
 	FFprobe string `yaml:"ffprobe" json:"ffprobe"`
 }
-
 type Screenshot struct {
 	Count       int    `yaml:"count" json:"count"`
 	Subtitles   bool   `yaml:"subtitles" json:"subtitles"`
 	Compress    bool   `yaml:"compress" json:"compress"`
-	SkipPercent int    `yaml:"skip_percent" json:"skip_percent"` // skip head/tail %
-	Tonemap     string `yaml:"tonemap" json:"tonemap"`           // hable|mobius|reinhard|bt2390
+	SkipPercent int    `yaml:"skip_percent" json:"skip_percent"`
+	Tonemap     string `yaml:"tonemap" json:"tonemap"`
 }
-
 type Upload struct {
-	Default string            `yaml:"default" json:"default"`
-	Picgo   PicgoUpload       `yaml:"picgo" json:"picgo"`
-	Pixhost PixhostUpload     `yaml:"pixhost" json:"pixhost"`
-	Extra   map[string]string `yaml:"extra,omitempty" json:"extra,omitempty"`
+	Default     string            `yaml:"default" json:"default"`
+	Concurrency int               `yaml:"concurrency" json:"concurrency"`
+	Picgo       PicgoUpload       `yaml:"picgo" json:"picgo"`
+	Pixhost     PixhostUpload     `yaml:"pixhost" json:"pixhost"`
+	Imgbb       SecretUpload      `yaml:"imgbb" json:"imgbb"`
+	Freeimage   SecretUpload      `yaml:"freeimage" json:"freeimage"`
+	AGSV        TokenUpload       `yaml:"agsv" json:"agsv"`
+	Pterclub    CookieUpload      `yaml:"pterclub" json:"pterclub"`
+	Extra       map[string]string `yaml:"extra,omitempty" json:"extra,omitempty"`
 }
-
 type PicgoUpload struct {
-	Endpoint string `yaml:"endpoint" json:"endpoint"` // https://www.picgo.net/api/1/upload
+	Endpoint string `yaml:"endpoint" json:"endpoint"`
 	APIKey   string `yaml:"api_key" json:"api_key"`
 	Album    string `yaml:"album,omitempty" json:"album,omitempty"`
 }
-
 type PixhostUpload struct {
-	ContentType int `yaml:"content_type" json:"content_type"` // 0 safe, 1 adult
-	MaxTh       int `yaml:"max_th" json:"max_th"`
+	ContentType int    `yaml:"content_type" json:"content_type"`
+	MaxTh       int    `yaml:"max_th" json:"max_th"`
+	Domain      string `yaml:"domain" json:"domain"`
 }
-
+type SecretUpload struct {
+	APIKey string `yaml:"api_key" json:"api_key"`
+}
+type TokenUpload struct {
+	Token string `yaml:"token" json:"token"`
+}
+type CookieUpload struct {
+	Cookie string `yaml:"cookie" json:"cookie"`
+}
 type Torrent struct {
 	Announce  string `yaml:"announce" json:"announce"`
 	Private   bool   `yaml:"private" json:"private"`
 	Source    string `yaml:"source" json:"source"`
-	PieceSize int    `yaml:"piece_size" json:"piece_size"` // 0 = auto; else log2 bytes (e.g. 24 = 16MiB)
+	PieceSize int    `yaml:"piece_size" json:"piece_size"`
 	Comment   string `yaml:"comment" json:"comment"`
 }
 
@@ -96,16 +98,13 @@ func Default(dataDir string) *Config {
 		roots["media"] = "/media"
 	}
 	return &Config{
-		Server:     Server{Listen: ":8080"},
-		Auth:       Auth{SessionDays: 30},
+		Server: Server{Listen: ":8080"}, Auth: Auth{SessionDays: 30},
 		Paths:      Paths{Roots: roots, Output: filepath.Join(dataDir, "output")},
 		Tasks:      Tasks{HeavyConcurrency: 2, HistoryKeep: 200},
-		Screenshot: Screenshot{Count: 5, Subtitles: true, Compress: false, SkipPercent: 5, Tonemap: "hable"},
-		Upload: Upload{
-			Default: "picgo",
+		Screenshot: Screenshot{Count: 5, Subtitles: true, SkipPercent: 5, Tonemap: "hable"},
+		Upload: Upload{Default: "picgo", Concurrency: 3,
 			Picgo:   PicgoUpload{Endpoint: "https://www.picgo.net/api/1/upload"},
-			Pixhost: PixhostUpload{ContentType: 0, MaxTh: 350},
-		},
+			Pixhost: PixhostUpload{ContentType: 0, MaxTh: 350, Domain: "to"}},
 		Torrent: Torrent{Private: true},
 	}
 }
@@ -123,7 +122,6 @@ func DataDir() string {
 	wd, _ := os.Getwd()
 	return filepath.Join(wd, "data")
 }
-
 func Path(dataDir string) string { return filepath.Join(dataDir, "config.yaml") }
 
 // Load reads config.yaml from dataDir, creating it with defaults if absent,
@@ -154,9 +152,14 @@ func Load(dataDir string) (*Config, error) {
 	if cfg.Tasks.HeavyConcurrency < 1 {
 		cfg.Tasks.HeavyConcurrency = 1
 	}
+	if cfg.Upload.Concurrency < 1 {
+		cfg.Upload.Concurrency = 3
+	}
+	if cfg.Upload.Pixhost.Domain == "" {
+		cfg.Upload.Pixhost.Domain = "to"
+	}
 	return cfg, nil
 }
-
 func Save(dataDir string, cfg *Config) error {
 	b, err := yaml.Marshal(cfg)
 	if err != nil {
@@ -168,7 +171,6 @@ func Save(dataDir string, cfg *Config) error {
 	}
 	return os.Rename(tmp, Path(dataDir))
 }
-
 func applyEnv(c *Config) {
 	str := func(key string, dst *string) {
 		if v, ok := os.LookupEnv(key); ok {
@@ -189,7 +191,18 @@ func applyEnv(c *Config) {
 	num("SEEDKIT_TASKS_HEAVY_CONCURRENCY", &c.Tasks.HeavyConcurrency)
 	str("SEEDKIT_TOOLS_FFMPEG", &c.Tools.FFmpeg)
 	str("SEEDKIT_TOOLS_FFPROBE", &c.Tools.FFprobe)
+	num("SEEDKIT_UPLOAD_CONCURRENCY", &c.Upload.Concurrency)
+	str("SEEDKIT_UPLOAD_DEFAULT", &c.Upload.Default)
+	str("SEEDKIT_UPLOAD_PICGO_ENDPOINT", &c.Upload.Picgo.Endpoint)
 	str("SEEDKIT_UPLOAD_PICGO_API_KEY", &c.Upload.Picgo.APIKey)
+	str("SEEDKIT_UPLOAD_PICGO_ALBUM", &c.Upload.Picgo.Album)
+	num("SEEDKIT_UPLOAD_PIXHOST_CONTENT_TYPE", &c.Upload.Pixhost.ContentType)
+	num("SEEDKIT_UPLOAD_PIXHOST_MAX_TH", &c.Upload.Pixhost.MaxTh)
+	str("SEEDKIT_UPLOAD_PIXHOST_DOMAIN", &c.Upload.Pixhost.Domain)
+	str("SEEDKIT_UPLOAD_IMGBB_API_KEY", &c.Upload.Imgbb.APIKey)
+	str("SEEDKIT_UPLOAD_FREEIMAGE_API_KEY", &c.Upload.Freeimage.APIKey)
+	str("SEEDKIT_UPLOAD_AGSV_TOKEN", &c.Upload.AGSV.Token)
+	str("SEEDKIT_UPLOAD_PTERCLUB_COOKIE", &c.Upload.Pterclub.Cookie)
 	str("SEEDKIT_TORRENT_ANNOUNCE", &c.Torrent.Announce)
 	// SEEDKIT_PATHS_ROOTS="media=/media,downloads=/home/x/dl"
 	if v, ok := os.LookupEnv("SEEDKIT_PATHS_ROOTS"); ok && v != "" {

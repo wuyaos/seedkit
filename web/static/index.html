@@ -142,7 +142,7 @@
             <div class="expand" x-show="exp==='shot'">
               <label>数量 <input type="number" min="1" max="20" x-model.number="sh.count"></label>
               <label>字幕 <select x-model="sh.lang"><option value="" x-text="followConfig('subtitle')"></option><option value="none">不烧录</option><option value="default">默认轨</option><option value="chi">中文</option><option value="eng">英文</option><option value="jpn">日文</option></select></label>
-              <label>上传 <select x-model="sh.upload"><option value="" x-text="followConfig('upload')"></option><option value="picgo">picgo</option><option value="pixhost">pixhost</option><option value="no">不上传</option></select></label>
+              <label>上传 <select x-model="sh.upload"><option value="" x-text="followConfig('upload')"></option><template x-for="h in UPLOAD_HOSTS" :key="h.v"><option :value="h.v" x-text="h.l"></option></template><option value="no">不上传</option></select></label>
               <label>压缩 PNG <select x-model="sh.compress"><option value="" x-text="followConfig('compress')"></option><option value="1">开启（较慢）</option><option value="0">关闭（更快）</option></select></label>
             </div>
             <div class="d">PNG 压缩默认关闭；开启会减小体积，但增加处理时间，4K 图片尤其明显。关闭不降低截图分辨率。</div>
@@ -199,15 +199,17 @@
                 <div class="muted" style="margin-top:8px;font-size:12px" x-text="(r.data.hdr?'HDR tonemap · ':'')+'字幕 '+(r.data.subtitle||'none')+(r.data.warnings?.length?' · '+r.data.warnings.join('；'):'')"></div>
                 <div class="shots">
                   <template x-for="s in r.data.shots" :key="s.path">
-                    <div class="shot"><img :src="s.web" loading="lazy" @click="lb=s.web" alt="视频截图"><span class="t" x-text="fmtDur(s.seconds)"></span><a class="shot-download" :href="s.web+'?dl=1'" download title="下载这张截图" aria-label="下载这张截图"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#download"/></svg></a><div class="u" :class="{no:!s.url}" x-text="s.url?s.url.replace('https://','').replace('http://',''):'未上传'" :title="s.url"></div></div>
+                    <div class="shot"><img :src="s.web" loading="lazy" @click="lb=s.web" alt="视频截图"><span class="t" x-text="fmtDur(s.seconds)"></span><a class="shot-download" :href="s.web+'?dl=1'" download title="下载这张截图" aria-label="下载这张截图"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#download"/></svg></a><div class="u" :class="{no:!['success','cached'].includes(shotStatus(s))}" :title="s.upload_error||s.url"><span x-text="shotStatusLabel(s)"></span><template x-if="['success','cached'].includes(shotStatus(s))"><span x-text="' · '+s.url.replace('https://','').replace('http://','')"></span></template><template x-if="shotStatus(s)==='failed'&&s.upload_error"><span class="err" x-text="' · '+s.upload_error"></span></template><template x-if="s.upload_attempts>1"><span x-text="' · 第 '+s.upload_attempts+' 次'"></span></template><template x-if="s.upload_uncertain"><span class="err" title="网络中断导致无法确认是否真正上传成功，请核实后再使用" x-text="' · 结果未确认'"></span></template></div></div>
                   </template>
                 </div>
                 </div>
                 <div class="acts">
                   <a class="btn" :href="'/api/results/'+encodeURIComponent(r.id)+'/zip'" download><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#download"/></svg>下载整组 ZIP</a>
-                  <button class="btn pri" :disabled="!uploaded(r).length" @click="copy(uploaded(r).map(s=>'[img]'+s.url+'[/img]').join('\n'),'已复制 '+uploaded(r).length+' 个 [img]')"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#copy"/></svg>复制 [img]</button>
-                  <button class="btn" :disabled="!uploaded(r).length" @click="copy(uploaded(r).map(s=>s.url).join('\n'),'已复制链接')"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#link"/></svg>复制链接</button>
-                  <button class="btn" x-show="pending(r).length" @click="reupload(r)"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#upload"/></svg><span x-text="'补传 '+pending(r).length+' 张'"></span></button>
+                  <button class="btn pri" :disabled="!uploaded(r).length" @click="copyImg(r)"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#copy"/></svg>复制 [img]</button>
+                  <button class="btn" :disabled="!uploaded(r).length" @click="copyLinks(r)"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#link"/></svg>复制链接</button>
+                  <button class="btn" :disabled="!allHaveThumb(r)" :title="uploaded(r).length&&!allHaveThumb(r)?'并非所有成功项都有缩略图':''" @click="copyThumb(r)"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#image"/></svg>复制缩略图</button>
+                  <button class="btn" x-show="pending(r).length" @click="reupload(r,{all:false,force:false})"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#upload"/></svg><span x-text="'补传 '+pending(r).length+' 张'"></span></button>
+                  <button class="btn" @click="reupload(r,{all:true,force:true})" title="绕过缓存，重新上传全部截图"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#refresh-cw"/></svg>强制全量重传</button>
                   <button class="btn" @click="ops={mediainfo:false,bdinfo:false,screenshot:true,torrent:false};run()"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#rotate-cw"/></svg>重截</button>
                   <div class="sp"></div><button class="btn ghost danger" @click="delRes(r,true)"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#trash-2"/></svg>删除这组</button>
                 </div>
@@ -305,7 +307,7 @@
         <div>
           <div class="f"><label for="quick-count">截图数量（留空跟随设置）</label><input id="quick-count" x-ref="quickFirst" type="number" min="1" max="20" x-model.number="qk.sh.count" :placeholder="cfg.screenshot?.count||3"></div>
           <div class="f"><label for="quick-sub">字幕</label><select id="quick-sub" x-model="qk.sh.lang"><option value="" x-text="followConfig('subtitle')"></option><option value="none">不烧录</option><option value="default">默认轨</option><option value="chi">中文</option><option value="eng">英文</option><option value="jpn">日文</option></select></div>
-          <div class="f"><label for="quick-host">上传</label><select id="quick-host" x-model="qk.sh.upload"><option value="" x-text="followConfig('upload')"></option><option value="picgo">picgo</option><option value="pixhost">pixhost</option><option value="no">不上传</option></select></div>
+          <div class="f"><label for="quick-host">上传</label><select id="quick-host" x-model="qk.sh.upload"><option value="" x-text="followConfig('upload')"></option><template x-for="h in UPLOAD_HOSTS" :key="h.v"><option :value="h.v" x-text="h.l"></option></template><option value="no">不上传</option></select></div>
           <div class="f"><label for="quick-png">压缩 PNG</label><select id="quick-png" x-model="qk.sh.compress"><option value="" x-text="followConfig('compress')"></option><option value="0">关闭（更快）</option><option value="1">开启（较慢）</option></select></div>
           <p class="muted">PNG 压缩默认关闭；开启可减小体积，但高分辨率图片处理较慢。</p>
         </div>
@@ -451,14 +453,29 @@
 
         <section class="sec" data-sec="host">
           <div class="sh"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#upload"/></svg><div><h4>图床</h4><p>截图完成后自动上传并生成 [img] 代码</p></div></div>
-          <div class="frow"><label>默认图床</label><div class="inline"><div class="seg w"><span :class="{on:c.upload.default==='picgo'}" @click="c.upload.default='picgo'">picgo</span><span :class="{on:c.upload.default==='pixhost'}" @click="c.upload.default='pixhost'">pixhost</span></div></div></div>
+          <div class="frow"><label>默认图床</label><div class="inline"><div class="seg w"><template x-for="h in UPLOAD_HOSTS" :key="h.v"><span :class="{on:c.upload.default===h.v}" @click="c.upload.default=h.v" x-text="h.l"></span></template></div></div></div>
+          <div class="frow"><label>并发数</label><div class="inline"><span class="unit"><input type="number" min="1" max="8" x-model.number="c.upload.concurrency"><i>个</i></span><span class="d">同时上传的截图数量；默认 3，站点限流严格时可调低</span></div></div>
           <div class="grp" x-show="c.upload.default==='picgo'"><div class="gt">picgo</div>
             <div class="frow"><label>API 地址</label><div><input x-model="c.upload.picgo.endpoint" placeholder="https://www.picgo.net/api/1/upload" spellcheck="false"></div></div>
-            <div class="frow"><label>API Key</label><div><div class="fieldwrap"><input x-model="c.upload.picgo.api_key" :type="set.showKey?'text':'password'" placeholder="保留原值请勿修改" autocomplete="off" spellcheck="false"><div class="suffix"><button type="button" class="btn ghost icon-btn" :class="{on:set.showKey}" :title="set.showKey?'隐藏 API Key':'显示 API Key'" :aria-label="set.showKey?'隐藏 API Key':'显示 API Key'" :disabled="set.keyBusy" :aria-pressed="!!set.showKey" @click="toggleKey()"><svg class="i" :class="{dim:!set.showKey}"><use href="vendor/lucide.svg?v=bf70ed4509c6#eye"/></svg></button></div></div></div></div>
+            <div class="frow"><label>API Key</label><div><div class="fieldwrap"><input x-model="c.upload.picgo.api_key" :type="set.showSecret.picgo?'text':'password'" placeholder="保留原值请勿修改" autocomplete="off" spellcheck="false"><div class="suffix"><button type="button" class="btn ghost icon-btn" :class="{on:set.showSecret.picgo}" :title="set.showSecret.picgo?'隐藏 API Key':'显示 API Key'" :aria-label="set.showSecret.picgo?'隐藏 API Key':'显示 API Key'" :disabled="set.secretBusy.picgo" :aria-pressed="!!set.showSecret.picgo" @click="toggleSecret('picgo')"><svg class="i" :class="{dim:!set.showSecret.picgo}"><use href="vendor/lucide.svg?v=bf70ed4509c6#eye"/></svg></button></div></div></div></div>
             <div class="frow"><label>相册</label><div><input x-model="c.upload.picgo.album" placeholder="可选"></div></div>
           </div>
           <div class="grp" x-show="c.upload.default==='pixhost'"><div class="gt">pixhost</div>
             <div class="frow"><label>内容分级</label><div class="inline"><div class="seg w"><span :class="{on:c.upload.pixhost.content_type===0}" @click="c.upload.pixhost.content_type=0">safe</span><span :class="{on:c.upload.pixhost.content_type===1}" @click="c.upload.pixhost.content_type=1">adult</span></div></div></div>
+            <div class="frow"><label>镜像域名</label><div><input x-model="c.upload.pixhost.domain" placeholder="to"><div class="d">显示/缩略图域名后缀，默认 to（即 pixhost.to）</div></div></div>
+          </div>
+          <div class="grp" x-show="c.upload.default==='imgbb'"><div class="gt">imgbb</div>
+            <div class="frow"><label>API Key</label><div><div class="fieldwrap"><input x-model="c.upload.imgbb.api_key" :type="set.showSecret.imgbb?'text':'password'" placeholder="保留原值请勿修改" autocomplete="off" spellcheck="false"><div class="suffix"><button type="button" class="btn ghost icon-btn" :class="{on:set.showSecret.imgbb}" :title="set.showSecret.imgbb?'隐藏 API Key':'显示 API Key'" :aria-label="set.showSecret.imgbb?'隐藏 API Key':'显示 API Key'" :disabled="set.secretBusy.imgbb" :aria-pressed="!!set.showSecret.imgbb" @click="toggleSecret('imgbb')"><svg class="i" :class="{dim:!set.showSecret.imgbb}"><use href="vendor/lucide.svg?v=bf70ed4509c6#eye"/></svg></button></div></div></div></div>
+          </div>
+          <div class="grp" x-show="c.upload.default==='freeimage'"><div class="gt">freeimage</div>
+            <div class="frow"><label>API Key</label><div><div class="fieldwrap"><input x-model="c.upload.freeimage.api_key" :type="set.showSecret.freeimage?'text':'password'" placeholder="保留原值请勿修改" autocomplete="off" spellcheck="false"><div class="suffix"><button type="button" class="btn ghost icon-btn" :class="{on:set.showSecret.freeimage}" :title="set.showSecret.freeimage?'隐藏 API Key':'显示 API Key'" :aria-label="set.showSecret.freeimage?'隐藏 API Key':'显示 API Key'" :disabled="set.secretBusy.freeimage" :aria-pressed="!!set.showSecret.freeimage" @click="toggleSecret('freeimage')"><svg class="i" :class="{dim:!set.showSecret.freeimage}"><use href="vendor/lucide.svg?v=bf70ed4509c6#eye"/></svg></button></div></div></div></div>
+          </div>
+          <div class="grp" x-show="c.upload.default==='agsv'"><div class="gt">AGSV</div>
+            <div class="frow"><label>Token</label><div><div class="fieldwrap"><input x-model="c.upload.agsv.token" :type="set.showSecret.agsv?'text':'password'" placeholder="保留原值请勿修改" autocomplete="off" spellcheck="false"><div class="suffix"><button type="button" class="btn ghost icon-btn" :class="{on:set.showSecret.agsv}" :title="set.showSecret.agsv?'隐藏 Token':'显示 Token'" :aria-label="set.showSecret.agsv?'隐藏 Token':'显示 Token'" :disabled="set.secretBusy.agsv" :aria-pressed="!!set.showSecret.agsv" @click="toggleSecret('agsv')"><svg class="i" :class="{dim:!set.showSecret.agsv}"><use href="vendor/lucide.svg?v=bf70ed4509c6#eye"/></svg></button></div></div></div></div>
+          </div>
+          <div class="grp" x-show="c.upload.default==='pterclub'"><div class="gt">PterClub</div>
+            <div class="frow"><label>Cookie</label><div><div class="fieldwrap"><input x-model="c.upload.pterclub.cookie" :type="set.showSecret.pterclub?'text':'password'" placeholder="保留原值请勿修改" autocomplete="off" spellcheck="false"><div class="suffix"><button type="button" class="btn ghost icon-btn" :class="{on:set.showSecret.pterclub}" :title="set.showSecret.pterclub?'隐藏 Cookie':'显示 Cookie'" :aria-label="set.showSecret.pterclub?'隐藏 Cookie':'显示 Cookie'" :disabled="set.secretBusy.pterclub" :aria-pressed="!!set.showSecret.pterclub" @click="toggleSecret('pterclub')"><svg class="i" :class="{dim:!set.showSecret.pterclub}"><use href="vendor/lucide.svg?v=bf70ed4509c6#eye"/></svg></button></div></div></div></div>
+            <div class="stat bad"><svg class="i"><use href="vendor/lucide.svg?v=bf70ed4509c6#circle-alert"/></svg><span>Cookie 等同于账号凭据：仅通过 HTTPS 提交，不会跟随跨域跳转转发；固定使用 https://s3.pterclub.net，不做浏览器自动登录或绕过站点风控。令牌失效时最多自动刷新一次，请勿在公共环境粘贴此 Cookie。</span></div>
           </div>
         </section>
 
