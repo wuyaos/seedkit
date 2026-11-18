@@ -109,6 +109,7 @@ func (s *Server) routes() {
 	p.HandleFunc("POST /api/screenshot", s.handleScreenshot)
 	p.HandleFunc("POST /api/upload", s.handleUpload)
 	p.HandleFunc("POST /api/torrent", s.handleTorrent)
+	p.HandleFunc("POST /api/torrent/preview", s.handleTorrentPreview)
 	p.HandleFunc("POST /api/screenshot/reupload", s.handleReupload)
 	p.HandleFunc("GET /api/results", s.handleResults)
 	p.HandleFunc("GET /api/results/recent", s.handleResultsRecent)

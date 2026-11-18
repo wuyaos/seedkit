@@ -34,6 +34,7 @@ jobs:
       - name: Frontend checks
         run: |
           node --check web/static/app.js
+          node --test web/*.test.js
           node scripts/test-task-preferences.cjs
           node scripts/test-task-actions.cjs
           python3 -m unittest discover -s scripts -p 'test_*.py'

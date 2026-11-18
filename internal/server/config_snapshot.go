@@ -12,5 +12,6 @@ func (s *Server) configSnapshot() config.Config {
 	c := *s.cfg
 	c.Paths.Roots = maps.Clone(c.Paths.Roots)
 	c.Upload.Extra = maps.Clone(c.Upload.Extra)
+	c.Torrent.Exclude = append([]string(nil), c.Torrent.Exclude...)
 	return c
 }

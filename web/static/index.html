@@ -7,6 +7,7 @@
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23d94f6b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M11.017 2.814a1 1 0 0 1 1.966 0l1.051 5.558a2 2 0 0 0 1.594 1.594l5.558 1.051a1 1 0 0 1 0 1.966l-5.558 1.051a2 2 0 0 0-1.594 1.594l-1.051 5.558a1 1 0 0 1-1.966 0l-1.051-5.558a2 2 0 0 0-1.594-1.594l-5.558-1.051a1 1 0 0 1 0-1.966l5.558-1.051a2 2 0 0 0 1.594-1.594z'/></svg>">
 <link rel="stylesheet" href="app.css">
 <script>(function(){var t=localStorage.getItem('sk.theme')||'system';var d=t==='dark'||(t==='system'&&matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.dataset.theme='dark';var g=localStorage.getItem('sk.glass');if(g&&g!=='frosted')document.documentElement.dataset.glass=g;})()</script>
+<script defer src="torrent-selection.js"></script>
 <script defer src="app.js"></script>
 <script defer src="vendor/alpine.min.js"></script>
 </head>
@@ -159,6 +160,7 @@
               <label>分块 <select x-model="tor.piece"><option value="" x-text="followConfig('piece')"></option><template x-for="p in [16,17,18,19,20,21,22,23,24,25,26]"><option :value="p" x-text="(2**p/1024/1024>=1?2**p/1024/1024+' MiB':2**p/1024+' KiB')"></option></template></select></label>
               <label>私有 <select x-model="tor.private"><option value="" x-text="followConfig('private')"></option><option value="1">开</option><option value="0">关</option></select></label>
               <label style="flex:1">备注 <input style="flex:1" x-model="tor.comment"></label>
+              <div class="tor-content-control"><span x-text="torContentDesc(tor,cur?.path)"></span><button type="button" class="btn" @click="openTorContent(cur,tor)">选择文件…</button><button type="button" class="btn" x-show="torContent(tor,cur?.path)" @click="resetTorContent(tor)">重置</button><small class="d">文件选择会改变 InfoHash；辅种请与原种子保持一致。</small></div>
             </div>
             </div>
           </div>
@@ -319,6 +321,7 @@
           <div class="f"><label for="quick-piece">分块</label><select id="quick-piece" x-model="qk.tor.piece"><option value="" x-text="followConfig('piece')"></option><template x-for="p in [16,17,18,19,20,21,22,23,24,25,26]"><option :value="p" x-text="fmtSize(2**p)"></option></template></select></div>
           <div class="f"><label for="quick-private">私有种子</label><select id="quick-private" x-model="qk.tor.private"><option value="" x-text="followConfig('private')"></option><option value="1">开启</option><option value="0">关闭</option></select></div>
           <div class="f"><label for="quick-comment">备注</label><input id="quick-comment" x-model="qk.tor.comment"></div>
+          <div class="tor-content-control"><span x-text="torContentDesc(qk.tor,qk.e?.path)"></span><button type="button" class="btn" @click="openTorContent(qk.e,qk.tor)">选择文件…</button><button type="button" class="btn" x-show="torContent(qk.tor,qk.e?.path)" @click="resetTorContent(qk.tor)">重置</button><small class="d">文件选择会改变 InfoHash；辅种请与原种子保持一致。</small></div>
         </div>
       </template>
     </fieldset>
@@ -486,6 +489,7 @@
           <div class="frow"><label>备注</label><div><input x-model="c.torrent.comment" placeholder="写入种子 comment 字段，可选"></div></div>
           <div class="frow"><label>私有种子</label><div class="inline"><label class="sw"><input type="checkbox" x-model="c.torrent.private"><i></i></label><span class="d">PT 站必须开启</span></div></div>
           <div class="frow"><label>分块大小</label><div class="inline"><select x-model.number="c.torrent.piece_size"><option :value="0">自动</option><template x-for="p in [16,18,20,21,22,23,24,25,26]"><option :value="p" x-text="(2**p/1024/1024>=1?2**p/1024/1024+' MiB':2**p/1024+' KiB')"></option></template></select><span class="d">自动按体积选择</span></div></div>
+          <div class="frow"><label for="torrent-exclude">排除规则</label><div><textarea id="torrent-exclude" rows="4" :value="(c.torrent.exclude||[]).join('\n')" @input="c.torrent.exclude=$event.target.value.split(/\r?\n/).map(x=>x.trim()).filter(Boolean)" placeholder="每行一条，例如 *.log 或 **/Sample/**"></textarea><small class="d">默认不排除用户内容。规则匹配不区分大小写；内置忽略始终有效。</small></div></div>
         </section>
 
         <section class="sec" data-sec="tasks">
@@ -516,6 +520,33 @@
 <div class="bub glass" x-show="pet.say" x-transition.opacity x-text="pet.say"></div>
 <video class="pet" x-ref="pet" autoplay muted loop playsinline poster="assets/pet/idle.png" draggable="false" @error="ui.pet=false"><source :src="'assets/pet/'+pet.clip+'.webm'" type="video/webm"></video>
 </div>
+</template>
+<!-- ===== exact torrent content picker ===== -->
+<template x-if="ts">
+  <div class="tor-picker-overlay" @click.self="closeTorContent()">
+    <section class="tor-picker glass" role="dialog" aria-modal="true" aria-labelledby="tor-picker-title" tabindex="-1" x-init="$el.focus()">
+      <header><div><h2 id="tor-picker-title">选择种子内容</h2><div class="h" x-text="ts.source"></div></div><button type="button" class="btn" aria-label="关闭文件选择" @click="closeTorContent()">×</button></header>
+      <p class="d">取消勾选只影响种子内容，不会删除源文件。搜索仅过滤显示，目录勾选仍作用于整个目录。</p>
+      <div class="tor-picker-rules"><label for="tor-rule-mode">排除规则</label><select id="tor-rule-mode" x-model="ts.mode" @change="dirtyTorContent()"><option value="follow">跟随配置</option><option value="custom">本次自定义</option><option value="none">不使用用户排除规则</option></select><button type="button" class="btn" @click="scanTorContent()" :disabled="ts.busy">重新扫描</button></div>
+      <textarea x-show="ts.mode==='custom'" aria-label="本次排除规则" rows="3" x-model="ts.rules" @input="dirtyTorContent()" placeholder="每行一条，例如 *.log 或 **/Sample/**"></textarea>
+      <p class="d" x-show="!ts.isDir">单文件制种不应用用户目录排除规则。</p>
+      <div class="tor-picker-tools"><input type="search" aria-label="搜索种子文件" placeholder="搜索文件或路径…" x-model="ts.query" @input="ts.limit=500"><button type="button" class="btn" @click="restoreTorContent()" :disabled="!ts.valid||ts.busy">恢复默认选择</button></div>
+      <div class="err" x-show="ts.err" x-text="ts.err" role="alert"></div>
+      <p class="d" x-show="ts.dirty">规则已改变，请重新扫描；旧预览不能应用。</p>
+      <p x-show="ts.busy" role="status">正在扫描… <button type="button" class="btn" @click="closeTorContent()">取消扫描</button></p>
+      <div class="tor-file-tree" role="group" aria-label="种子文件清单" :aria-busy="ts.busy">
+        <template x-for="n in torRows()" :key="(n.dir?'d:':'f:')+n.id">
+          <div class="tor-file-row" :class="{excluded:!!n.reason}" :style="'--depth:'+n.depth">
+            <button type="button" class="tor-expander" :disabled="!n.dir" :aria-label="(ts.expanded.has(n.id)?'折叠 ':'展开 ')+n.label" :aria-expanded="n.dir?ts.expanded.has(n.id):undefined" @click="expandTorNode(n)" x-text="n.dir?(ts.expanded.has(n.id)?'▾':'▸'):''"></button>
+            <input type="checkbox" :aria-label="'选择 '+n.label" :checked="n.total>0&&n.checked===n.total" x-effect="$el.indeterminate=n.dir&&n.checked>0&&n.checked<n.total" :disabled="!!n.reason||!n.total||!ts.valid||ts.busy" @change="toggleTorNode(n,$event.target.checked)">
+            <div class="tor-file-name"><button type="button" x-show="n.dir" @click="expandTorNode(n)" x-text="n.label"></button><span x-show="!n.dir" x-text="n.label"></span><small class="d" x-show="n.reason" x-text="n.reason"></small></div><span class="tor-file-size" x-text="fmtSize(n.size)"></span>
+          </div>
+        </template>
+        <button type="button" class="btn" x-show="torRows().length>=ts.limit" @click="ts.limit+=500">显示更多文件</button>
+      </div>
+      <footer><div><b x-text="'已选 '+ts.selected.size+' / '+(ts.nodes[0]?.total||0)+' 个可选文件 · '+fmtSize(torSelectionBytes())"></b><small class="d" x-show="ts.valid&&!ts.selected.size">至少选择一个文件</small><small class="d">文件选择会改变 InfoHash；辅种请保持原文件集合与分块参数。</small></div><div class="tor-picker-actions"><button type="button" class="btn" @click="closeTorContent()">取消</button><button type="button" class="btn pri" :disabled="!ts.valid||ts.busy||ts.dirty||!ts.selected.size" @click="applyTorContent()">应用选择</button></div></footer>
+    </section>
+  </div>
 </template>
 </body>
 </html>

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/wuyaos/seedkit/internal/config"
+	"github.com/wuyaos/seedkit/internal/torrent"
 )
 
 const secretMask = "••••"
@@ -42,6 +43,10 @@ func (s *Server) handleSettingsGetUpload(w http.ResponseWriter, r *http.Request)
 func (s *Server) handleSettingsPutUpload(w http.ResponseWriter, r *http.Request) {
 	var in config.Config
 	if err := readJSON(r, &in); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
+	if err := torrent.ValidateRules(in.Torrent.Exclude); err != nil {
 		writeErr(w, 400, err)
 		return
 	}

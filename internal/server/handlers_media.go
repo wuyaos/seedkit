@@ -246,6 +246,8 @@ type torrentReq struct {
 	Private   *bool
 	Comment   string
 	PieceSize int
+	Exclude   *[]string
+	Selection *torrent.Selection
 }
 
 func (s *Server) handleTorrent(w http.ResponseWriter, r *http.Request) {
@@ -259,17 +261,30 @@ func (s *Server) handleTorrent(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, statusFor(err), err)
 		return
 	}
+	if err := s.validateTorrentSelection(r.Context(), abs, in); err != nil {
+		writeErr(w, 400, err)
+		return
+	}
 	t := s.tasks.Submit("torrent", "制种 · "+path.Base(in.Path), true, s.torrentJob(abs, in))
 	writeJSON(w, 202, t)
 }
 
 func (s *Server) torrentJob(abs string, in torrentReq) task.Job {
 	cfg := s.configSnapshot()
+	exclude := append([]string(nil), cfg.Torrent.Exclude...)
+	if in.Exclude != nil {
+		exclude = append([]string(nil), (*in.Exclude)...)
+	}
+	var selection *torrent.Selection
+	if in.Selection != nil {
+		selection = &torrent.Selection{Snapshot: in.Selection.Snapshot, Paths: append([]string(nil), in.Selection.Paths...)}
+	}
 	return func(ctx context.Context, rep task.Reporter) (any, error) {
 		opt := torrent.Options{
 			Announce: in.Announce, Source: in.Source, Comment: in.Comment,
 			Private: cfg.Torrent.Private, Workers: cfg.Tasks.HeavyConcurrency + 1,
 			CreatedBy: "seedkit " + s.version,
+			Exclude:   exclude, Selection: selection,
 		}
 		if opt.Announce == "" {
 			opt.Announce = cfg.Torrent.Announce
@@ -290,7 +305,7 @@ func (s *Server) torrentJob(abs string, in torrentReq) task.Job {
 		if err != nil {
 			return nil, err
 		}
-		out := map[string]any{"torrent": res, "web": s.outputWeb(res.Path)}
+		out := map[string]any{"torrent": res, "web": s.outputWeb(res.Path), "exclude": exclude, "selection": selection}
 		s.record("torrent", in.Path, rep.ID(), out)
 		return out, nil
 	}

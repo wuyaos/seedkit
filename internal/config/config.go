@@ -82,11 +82,12 @@ type CookieUpload struct {
 	Cookie string `yaml:"cookie" json:"cookie"`
 }
 type Torrent struct {
-	Announce  string `yaml:"announce" json:"announce"`
-	Private   bool   `yaml:"private" json:"private"`
-	Source    string `yaml:"source" json:"source"`
-	PieceSize int    `yaml:"piece_size" json:"piece_size"`
-	Comment   string `yaml:"comment" json:"comment"`
+	Announce  string   `yaml:"announce" json:"announce"`
+	Private   bool     `yaml:"private" json:"private"`
+	Source    string   `yaml:"source" json:"source"`
+	PieceSize int      `yaml:"piece_size" json:"piece_size"`
+	Comment   string   `yaml:"comment" json:"comment"`
+	Exclude   []string `yaml:"exclude" json:"exclude"`
 }
 
 // Default returns a fresh config with sane defaults for a 2 GB seedbox.

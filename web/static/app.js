@@ -14,7 +14,7 @@ const api = {
     if (r.status === 401) { api.onUnauth?.(); throw new Error('未登录'); }
     const txt = await r.text();
     let data = null; try { data = txt ? JSON.parse(txt) : null; } catch { data = txt; }
-    if (!r.ok) throw new Error((data && data.error) || r.statusText || `HTTP ${r.status}`);
+    if (!r.ok) { const err = new Error((data && data.error) || r.statusText || `HTTP ${r.status}`); err.data = data; err.status = r.status; throw err; }
     return data;
   },
   onUnauth: null,
@@ -171,7 +171,7 @@ const app = {
     if (dark) h.dataset.theme = 'dark'; else delete h.dataset.theme;
     if (this.ui.glass !== 'frosted') h.dataset.glass = this.ui.glass; else delete h.dataset.glass;
   },
-  closeAll() { this.ctx.show = false; this.pop = false; this.dl.kind = ''; this.lb = ''; this.recent.show = false; this.pk.show = false; },
+  closeAll() { if (this.ts) { this.closeTorContent(); return; } this.ctx.show = false; this.pop = false; this.dl.kind = ''; this.lb = ''; this.recent.show = false; this.pk.show = false; },
   toast(msg, err) { const id = Date.now() + Math.random(); this.toasts.push({ id, msg, err }); setTimeout(() => { this.toasts = this.toasts.filter((t) => t.id !== id); }, err ? 6000 : 2500); },
   async copy(text, msg) {
     try { await navigator.clipboard.writeText(text); this.toast(msg || '已复制'); }
@@ -378,6 +378,7 @@ const app = {
       }
       if (active.includes('torrent') && this.canFor(entry, 'torrent')) {
         const b = { Path: p, Announce: tor.announce, Source: tor.source, Comment: tor.comment, PieceSize: tor.piece ? +tor.piece : 0 };
+        Object.assign(b, this.torrentPayload?.(tor, p) || {});
         if (tor.private) b.Private = tor.private === '1';
         jobs.push(api.post('/api/torrent', b));
       }
@@ -396,7 +397,7 @@ const app = {
     if (!e || this.submitting || !this.canFor(e, op)) return;
     this.cur = e;
     if (op === 'screenshot' || op === 'torrent') {
-      this.qk = { op, e: { ...e }, sh: { ...this.sh }, tor: { ...this.tor }, busy: false, err: '' };
+      this.qk = { op, e: { ...e }, sh: { ...this.sh }, tor: JSON.parse(JSON.stringify(this.tor)), busy: false, err: '' };
       this.$nextTick(() => this.$refs.quickFirst?.focus());
     } else this.$nextTick(() => this.run([op], e));
   },
@@ -473,6 +474,7 @@ const app = {
       const c = await api.get('/api/settings'); this.cfg = c;
       const draft = JSON.parse(JSON.stringify(c));
       this.backfillUpload(draft);
+      draft.torrent = draft.torrent || {}; draft.torrent.exclude = draft.torrent.exclude || [];
       this.set = { show: true, c: draft, roots: Object.entries(c.paths.roots || {}).map(([name, path]) => ({ name, path })), err: '', busy: false, nav: 'roots', homeDraft: this.home, homeBusy: false, homeErr: '', showSecret: {}, secretBusy: {} };
     } catch (e) { this.toast(e.message, true); }
   },
@@ -598,6 +600,7 @@ const app = {
 
 // Additive, browser-safe export for Node-based tests (web/*.test.js). Browsers never
 // define `module`, so this has no effect on the served app.
+Object.assign(app, typeof torrentSelection !== 'undefined' ? torrentSelection : (typeof module !== 'undefined' ? require('./torrent-selection.js').torrentSelection : {}));
 if (typeof module !== 'undefined') {
   module.exports = { api, app, UPLOAD_HOSTS, UPLOAD_DEFAULTS, UPLOAD_SECRET_FIELD, SHOT_STATUS_LABEL, fmtSize, fmtTime, fmtDur, pad, ago };
 }

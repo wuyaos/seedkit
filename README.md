@@ -9,7 +9,7 @@ Go 后端内嵌 Alpine.js 静态界面，无 Node.js、Java 或 .NET 常驻进�
 - **文件管理**：配置多个根目录，浏览、预览、创建目录、复制、移动、重命名和删除；支持可设置的 Home、路径跳转与右键任务入口。
 - **媒体报告**：提取 MediaInfo 和蓝光 BDInfo，查看、复制和下载结果。
 - **截图与上传**：支持 PicGo、Pixhost、ImgBB、Freeimage、AGSV，以及 PterClub Cookie 适配；支持哈希缓存、保序批量上传、失败项补传与 BBCode 复制。PNG 256 色量化与 Floyd–Steinberg 抖动可选，默认关闭。详见[图床上传说明](docs/image-hosts.md)。
-- **制种**：基于 mkbrr 生成 torrent，确认 tracker、source、piece size 等参数后提交。
+- **制种**：确认 tracker、source、piece size 等参数后提交；支持排除规则和文件树手动勾选，应用选择后固定文件清单并校验源文件变化，不修改源文件。详见[选择种子内容](docs/torrent-selection.md)。
 - **任务与成果**：通过 SSE 接收进度，查看日志、取消任务；任务历史与成果索引分别管理，清理任务不会自动删除成果。
 - **界面**：明暗主题、磨砂 / 玻璃风格、壁纸和可关闭的看板娘，静态资产本地提供，不依赖运行时 CDN。
 

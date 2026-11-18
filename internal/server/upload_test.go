@@ -42,6 +42,9 @@ func waitUpload(t *testing.T, s *Server, id string) *task.Task {
 		v, ok := s.tasks.Get(id)
 		if ok && (v.Status == task.Done || v.Status == task.Failed || v.Status == task.Cancelled) {
 			// Terminal status is visible just before the manager's final atomic save.
+			// Give the writer a chance to rename before opening the destination:
+			// Windows readers otherwise contend with the atomic replacement.
+			time.Sleep(10 * time.Millisecond)
 			b, _ := os.ReadFile(filepath.Join(s.dataDir, "tasks.json"))
 			var persisted []task.Task
 			_ = json.Unmarshal(b, &persisted)
@@ -53,7 +56,9 @@ func waitUpload(t *testing.T, s *Server, id string) *task.Task {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	t.Fatal("upload did not finish")
+	v, _ := s.tasks.Get(id)
+	b, readErr := os.ReadFile(filepath.Join(s.dataDir, "tasks.json"))
+	t.Fatalf("upload did not persist terminal state: task=%+v persisted=%s readErr=%v", v, b, readErr)
 	return nil
 }
 func postUpload(t *testing.T, s *Server, body string, reupload bool) *task.Task {
