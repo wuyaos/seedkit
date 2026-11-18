@@ -259,3 +259,23 @@ test('onTaskEnd: does not call loadRes when no file is currently selected', () =
   c.onTaskEnd({ id: 't1', title: 't', kind: 'screenshot', status: 'cancelled' });
   assert.equal(loadResCalls, 0);
 });
+
+
+test('login 401 reports invalid credentials; protected API 401 still invalidates session', async () => {
+  const previousFetch = global.fetch, previousHandler = api.onUnauth;
+  let invalidated = 0;
+  global.fetch = async () => ({ status: 401 }); api.onUnauth = () => invalidated++;
+  try {
+    await assert.rejects(api.post('/api/auth/login', { Username: 'wrong', Password: 'wrong' }), { message: '账号密码不正确', status: 401 });
+    assert.equal(invalidated, 0);
+    await assert.rejects(api.get('/api/settings'), { message: '未登录', status: 401 });
+    assert.equal(invalidated, 1);
+  } finally { global.fetch = previousFetch; api.onUnauth = previousHandler; }
+});
+
+test('CI embeds SHA version on branch builds while semver tags retain higher priority', () => {
+  const workflow = require('node:fs').readFileSync(path.join(__dirname, '../.github/workflows/ci.yml'), 'utf8');
+  assert.match(workflow, /type=sha,prefix=sha-,priority=600/);
+  assert.match(workflow, /type=semver,pattern=\{\{version\}\}/);
+  assert.match(workflow, /VERSION=\$\{\{ steps\.meta\.outputs\.version \}\}/);
+});

@@ -20,7 +20,9 @@ const torrentSelection = {
   torContent(tor, path) { return tor?.content?.source === path ? tor.content : null; },
   torContentDesc(tor, path) {
     const c = this.torContent(tor, path);
-    return c ? `已选 ${c.paths.length} / ${c.available} 个文件 · ${this.fmtSize(c.bytes)}（手动排除 ${c.available - c.paths.length} 个文件）` : '全部文件（应用默认排除规则）';
+    if (c) return `已选 ${c.paths.length} / ${c.available} 个文件 · ${this.fmtSize(c.bytes)}`;
+    const count = (this.cfg?.torrent?.exclude || []).filter(rule => typeof rule === 'string' && rule.trim()).length;
+    return count ? `全部可选文件（已应用 ${count} 条排除规则）` : '全部文件';
   },
   torrentPayload(tor, path) {
     const c = this.torContent(tor, path); if (!c) return {};

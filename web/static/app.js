@@ -11,7 +11,11 @@ const api = {
       if (e instanceof TypeError) throw new Error('无法连接服务，请确认服务正在运行后重试；若刚提交操作，请先查看任务栏，避免重复提交。');
       throw e;
     }
-    if (r.status === 401) { api.onUnauth?.(); throw new Error('未登录'); }
+    if (r.status === 401) {
+      const loginFailed = url === '/api/auth/login';
+      if (!loginFailed) api.onUnauth?.();
+      const err = new Error(loginFailed ? '账号密码不正确' : '未登录'); err.status = 401; throw err;
+    }
     const txt = await r.text();
     let data = null; try { data = txt ? JSON.parse(txt) : null; } catch { data = txt; }
     if (!r.ok) { const err = new Error((data && data.error) || r.statusText || `HTTP ${r.status}`); err.data = data; err.status = r.status; throw err; }

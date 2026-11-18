@@ -160,7 +160,7 @@
               <label>分块 <select x-model="tor.piece"><option value="" x-text="followConfig('piece')"></option><template x-for="p in [16,17,18,19,20,21,22,23,24,25,26]"><option :value="p" x-text="(2**p/1024/1024>=1?2**p/1024/1024+' MiB':2**p/1024+' KiB')"></option></template></select></label>
               <label>私有 <select x-model="tor.private"><option value="" x-text="followConfig('private')"></option><option value="1">开</option><option value="0">关</option></select></label>
               <label style="flex:1">备注 <input style="flex:1" x-model="tor.comment"></label>
-              <div class="tor-content-control"><span x-text="torContentDesc(tor,cur?.path)"></span><button type="button" class="btn" @click="openTorContent(cur,tor)">选择文件…</button><button type="button" class="btn" x-show="torContent(tor,cur?.path)" @click="resetTorContent(tor)">重置</button><small class="d">文件选择会改变 InfoHash；辅种请与原种子保持一致。</small></div>
+              <div class="tor-content-control"><span x-text="torContentDesc(tor,cur?.path)"></span><button type="button" class="btn" @click="openTorContent(cur,tor)">选择文件…</button><button type="button" class="btn" x-show="torContent(tor,cur?.path)" @click="resetTorContent(tor)">重置</button><small class="d">内置忽略：.torrent、部分系统杂项文件及 @eaDir，不属于用户排除规则。</small><small class="d">文件选择会改变 InfoHash；辅种请与原种子保持一致。</small></div>
             </div>
             </div>
           </div>
@@ -321,7 +321,7 @@
           <div class="f"><label for="quick-piece">分块</label><select id="quick-piece" x-model="qk.tor.piece"><option value="" x-text="followConfig('piece')"></option><template x-for="p in [16,17,18,19,20,21,22,23,24,25,26]"><option :value="p" x-text="fmtSize(2**p)"></option></template></select></div>
           <div class="f"><label for="quick-private">私有种子</label><select id="quick-private" x-model="qk.tor.private"><option value="" x-text="followConfig('private')"></option><option value="1">开启</option><option value="0">关闭</option></select></div>
           <div class="f"><label for="quick-comment">备注</label><input id="quick-comment" x-model="qk.tor.comment"></div>
-          <div class="tor-content-control"><span x-text="torContentDesc(qk.tor,qk.e?.path)"></span><button type="button" class="btn" @click="openTorContent(qk.e,qk.tor)">选择文件…</button><button type="button" class="btn" x-show="torContent(qk.tor,qk.e?.path)" @click="resetTorContent(qk.tor)">重置</button><small class="d">文件选择会改变 InfoHash；辅种请与原种子保持一致。</small></div>
+          <div class="tor-content-control"><span x-text="torContentDesc(qk.tor,qk.e?.path)"></span><button type="button" class="btn" @click="openTorContent(qk.e,qk.tor)">选择文件…</button><button type="button" class="btn" x-show="torContent(qk.tor,qk.e?.path)" @click="resetTorContent(qk.tor)">重置</button><small class="d">内置忽略：.torrent、部分系统杂项文件及 @eaDir，不属于用户排除规则。</small><small class="d">文件选择会改变 InfoHash；辅种请与原种子保持一致。</small></div>
         </div>
       </template>
     </fieldset>
